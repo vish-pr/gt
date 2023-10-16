@@ -10,7 +10,7 @@ git pull
 
 # install tinygrad
 # if file not exist, clone tinygrad
-if [ ! -d "tinygrad" ]; then
+if [ ! -f "tinygrad/setup.py" ]; then
   git clone https://github.com/tinygrad/tinygrad.git
 fi
 cd tinygrad
