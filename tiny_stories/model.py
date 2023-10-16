@@ -1,19 +1,24 @@
-from sentencepiece import SentencePieceProcessor
-from typing import List
-import struct
+#!/usr/bin/env python3
+
+# code sources:
+# https://github.com/karpathy/llama2.c
+# https://github.com/tinygrad/tinygrad/blob/master/examples/llama.py
+
 import os
-from pathlib import Path
-from tinygrad.nn.state import torch_load, load_state_dict
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+from sentencepiece import SentencePieceProcessor
+
+from tinygrad.helpers import CI, dtypes, getenv
 from tinygrad.jit import TinyJit
-from typing import Dict, Optional, Tuple
+from tinygrad.nn import Embedding, Linear
+from tinygrad.nn.state import load_state_dict, torch_load
 from tinygrad.shape.symbolic import Variable, sym_infer
 from tinygrad.tensor import Tensor
-from tinygrad.nn import Embedding, Linear
-from tinygrad.helpers import getenv, dtypes, CI
 
 JIT = getenv("JIT", 0 if CI else 1)
-
 
 class RMSNorm:
   def __init__(self, dim, eps=1e-6):
@@ -40,24 +45,7 @@ class ModelArgs:
     dropout: float = 0.0
 
 
-@dataclass
-class ModelArgs15M:
-    # default hyperparameters for the Llama 7B model
-    dim: int = 288
-    n_layers: int = 6
-    n_heads: int = 6
-    n_kv_heads: Optional[int] = 6
-    vocab_size: int = 32000
-    hidden_dim: Optional[int] = None
-    multiple_of: int = 256  # MLP hidden layer size will be multiple of
-    norm_eps: float = 1e-5
-    max_seq_len: int = 256
-    dropout: float = 0.0
-
-# https://github.com/facebookresearch/llama/blob/1076b9c51c77ad06e9d7ba8a4c6df775741732bd/llama/model.py#L47
-
-
-def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
+def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0) -> Tensor:
   freqs = 1.0 / (theta ** (Tensor.arange(0, dim, 2)[:(dim // 2)] / dim))
   freqs = Tensor.arange(end).unsqueeze(dim=1)*freqs.unsqueeze(dim=0)
   return Tensor.stack([Tensor.cos(freqs), Tensor.sin(freqs)], dim=-1).reshape(1, end, 1, dim//2, 2)
@@ -104,7 +92,7 @@ class Attention:
     self.wv = Linear(dim, self.n_kv_heads * self.head_dim, bias=False)
     self.wo = Linear(self.n_heads * self.head_dim, dim, bias=False)
 
-  def __call__(self, x: Tensor, cache_k: Optional[Tensor], cache_v: Optional[Tensor], start_pos: int, freqs_cis: Tensor, mask: Optional[Tensor], jit_ctx: Optional[Dict[Variable, int]] = None) -> Tuple[Tensor, Tensor, Tensor]:
+  def __call__(self, x: Tensor, freqs_cis: Tensor) -> Tensor:
     bsz, seqlen, _ = x.shape
     xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
     xq = xq.reshape(xq.shape[0], xq.shape[1], self.n_heads, self.head_dim)
@@ -112,22 +100,12 @@ class Attention:
     xv = xv.reshape(xv.shape[0], xv.shape[1], self.n_kv_heads, self.head_dim)
     xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
 
-    # kv caching!
-    if start_pos == 0:
-      keys, values = xk, xv
-    else:
-      assert cache_k is not None and cache_v is not None, "no cache"
-      assert start_pos == sym_infer(cache_k.shape[1], cache_k.lazydata.var_vals) == sym_infer(
-          cache_v.shape[1], cache_v.lazydata.var_vals), f"cache has wrong shape, not ({start_pos} == {sym_infer(cache_k.shape[1], cache_k.lazydata.var_vals)} == {sym_infer(cache_v.shape[1], cache_v.lazydata.var_vals)})"
-      assert seqlen == xk.shape[1] and seqlen == xv.shape[1], "seqlen is wrong shape?!?"
-      keys, values = cache_k.cat(xk, dim=1), cache_v.cat(xv, dim=1)
-
-    cache_k, cache_v = keys, values
+    keys, values = xk, xv
     keys, values = repeat_kv(keys, self.n_rep).realize(
     ), repeat_kv(values, self.n_rep).realize()
     attn = Tensor.scaled_dot_product_attention(xq.transpose(1, 2), keys.transpose(
-        1, 2), values.transpose(1, 2), mask).transpose(1, 2).reshape(bsz, seqlen, -1)
-    return self.wo(attn).realize(), cache_k.realize(), cache_v.realize()
+        1, 2), values.transpose(1, 2), is_causal=True).transpose(1, 2).reshape(bsz, seqlen, -1)
+    return self.wo(attn).realize()
 
 
 class FeedForward:
@@ -154,23 +132,12 @@ class TransformerBlock:
     self.attention_norm = RMSNorm(dim, norm_eps)
     self.ffn_norm = RMSNorm(dim, norm_eps)
 
-  def __call__(self, x: Tensor, cache_k: Optional[Tensor], cache_v: Optional[Tensor], start_pos: int, freqs_cis: Tensor, mask: Optional[Tensor], jit_ctx: Optional[Dict[Variable, int]] = None):
+  def __call__(self, x: Tensor, freqs_cis: Tensor):
     bsz, seqlen, _ = x.shape
-    if JIT and mask is None:
-      assert cache_k is not None and cache_v is not None, "no cache"
-      pos = Variable("pos", 1, 1024)
-      cache_k = cache_k.reshape(
-          cache_k.shape[0], pos, cache_k.shape[2], cache_k.shape[3])
-      cache_v = cache_v.reshape(
-          cache_v.shape[0], pos, cache_v.shape[2], cache_v.shape[3])
-      # need this because we don't reshape back to int shape in the jitted path and we don't have the correct var_vars in cache
-      cache_k.lazydata.var_vals[pos] = start_pos
-      cache_v.lazydata.var_vals[pos] = start_pos
-
-    output, cache_k, cache_v = self.attention(self.attention_norm(
-        x), cache_k, cache_v, start_pos, freqs_cis, mask, jit_ctx=jit_ctx)
+    output = self.attention(self.attention_norm(
+        x), freqs_cis)
     h = x + output
-    return (h + self.feed_forward(self.ffn_norm(h))).realize(), cache_k.realize(), cache_v.realize()
+    return (h + self.feed_forward(self.ffn_norm(h))).realize()
 
 
 class Transformer:
@@ -198,36 +165,12 @@ class Transformer:
 
   def __call__(self, tokens: Tensor, start_pos: int, temperature: Optional[float] = None):
     _bsz, seqlen = tokens.shape
-    if seqlen == 1 and start_pos > 0 and JIT:
-      pos = Variable("pos", 1, 1024)
-      # get only the part of freqs_cis that we are using.
-      freqs_cis = self.freqs_cis.shrink(((0, self.freqs_cis.shape[0]), (pos, pos+seqlen), (
-          0, self.freqs_cis.shape[2]), (0, self.freqs_cis.shape[3]), (0, self.freqs_cis.shape[4])))
-      freqs_cis.lazydata.var_vals[pos] = start_pos
-      h = self.tok_embeddings_jitted(tokens)
-      for i, (layer, (cache_k, cache_v)) in enumerate(zip(self.layers_jitted, self.kv_caches)):
-        h, cache_k, cache_v = layer(h, cache_k, cache_v, start_pos=start_pos,
-                                    freqs_cis=freqs_cis, mask=None, jit_ctx={pos: start_pos})
-        # TODO: move the kv cache into Attention, pre-allocate the cache and instead of cat, update the cache in-place
-        self.kv_caches[i] = (cache_k, cache_v)
-      return self.postprocess_jitted(h, temperature)
-    else:
-      freqs_cis = self.freqs_cis.shrink(((0, self.freqs_cis.shape[0]), (start_pos, start_pos+seqlen), (
-          0, self.freqs_cis.shape[2]), (0, self.freqs_cis.shape[3]), (0, self.freqs_cis.shape[4])))
-      mask = Tensor.full((1, 1, seqlen, start_pos + seqlen), float("-inf"),
-                         dtype=dtypes.float32).triu(start_pos+1).realize()
-      h = self.tok_embeddings(tokens)
-      for i, (layer, (cache_k, cache_v)) in enumerate(zip(self.layers, self.kv_caches)):
-        # need this reshape back to int shape in conversational mode because jitted and unjitted calls share the same cache
-        if cache_k is not None and start_pos > 0:
-          cache_k = cache_k.reshape(
-              cache_k.shape[0], start_pos, cache_k.shape[2], cache_k.shape[3])
-          cache_v = cache_v.reshape(
-              cache_v.shape[0], start_pos, cache_v.shape[2], cache_v.shape[3])
-        h, cache_k, cache_v = layer(
-            h, cache_k, cache_v, start_pos=start_pos, freqs_cis=freqs_cis, mask=mask)
-        self.kv_caches[i] = (cache_k, cache_v)
-      return self.postprocess(h, temperature)
+    h = self.tok_embeddings(tokens)
+    freqs_cis = self.freqs_cis.shrink(((0, self.freqs_cis.shape[0]), (start_pos, start_pos+seqlen), (
+        0, self.freqs_cis.shape[2]), (0, self.freqs_cis.shape[3]), (0, self.freqs_cis.shape[4])))
+    for layer in self.layers:
+      h = layer(h, freqs_cis=freqs_cis)
+    return self.postprocess(h, temperature)
 
 
 TOKENIZER_MODEL = "tokenizer.model"  # the llama sentencepiece tokenizer model
@@ -261,52 +204,32 @@ class Tokenizer:
     def decode(self, t: List[int]) -> str:
         return self.sp_model.Decode(t)
 
-    def export(self):
-
-        # get all the tokens (postprocessed) and their scores as floats
-        tokens, scores = [], []
-        for i in range(self.n_words):
-
-            # decode the token and light postprocessing
-            t = self.sp_model.id_to_piece(i)
-            s = self.sp_model.get_score(i)
-            if i == self.bos_id:
-                t = '\n<s>\n'
-            elif i == self.eos_id:
-                t = '\n</s>\n'
-            # sentencepiece uses this character as whitespace
-            t = t.replace('▁', ' ')
-            b = t.encode('utf-8')  # bytes of this token, utf-8 encoded
-
-            tokens.append(b)
-            scores.append(s)
-
-        # record the max token length
-        max_token_length = max(len(t) for t in tokens)
-
-        # write to a binary file
-        # the tokenizer.bin file is the same as .model file, but .bin
-        tokenizer_bin = self.model_path.replace('.model', '.bin')
-        with open(tokenizer_bin, 'wb') as f:
-            f.write(struct.pack("I", max_token_length))
-            for bytes, score in zip(tokens, scores):
-                f.write(struct.pack("fI", score, len(bytes)))
-                f.write(bytes)
-
 
 if __name__ == '__main__':
   checkpoint_path = 'tiny_stories/weights/stories15M.pt'
+  checkpoint_path = 'tiny_stories/weights/stories260K.pt'
   assert Path(checkpoint_path).is_file()
   check_point = torch_load(checkpoint_path)
-  model_args: ModelArgs = check_point['model_args']
-  print(check_point['config'])
-  model = Transformer(**vars(ModelArgs15M()))
-  weights = torch_load(checkpoint_path)['model']
-  load_state_dict(model, weights, strict=False)
+  model_args = ModelArgs(**check_point['model_args'])
+  model = Transformer(**vars(model_args))
+  state_dict = check_point['model']
+  unwanted_prefix = '_orig_mod.'
+  for k, v in list(state_dict.items()):
+    if k.startswith(unwanted_prefix):
+      state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
+  load_state_dict(model, state_dict, strict=False)
   tokenizer_path = 'tiny_stories/weights/tokenizer.model'
+  tokenizer_path = 'tiny_stories/weights/tok512.model'
   assert Path(tokenizer_path).is_file()
   enc = Tokenizer(tokenizer_path)
   tokens = enc.encode('Ron had two cats,',  bos=True, eos=True)
   print(enc.decode(tokens))
-  next = model(Tensor(tokens).unsqueeze(0), start_pos=0)
-  print(next)
+  next = model(Tensor([tokens]), start_pos=0).realize()
+  # next = model(Tensor(tokens).unsqueeze(0), start_pos=len(token)).squeeze(0).realize()
+  next = next.squeeze(0)
+  print(next.shape)
+  print(next.argmax(1).numpy().astype(int), model_args.vocab_size)
+  out = next.argmax(1).numpy().astype(int).tolist()
+  for index, i in enumerate(out):
+    print(f'{enc.decode(tokens[index])} -> {enc.decode([i])}')
+  # print(enc.decode(next.argmax(1).numpy().astype(int).tolist()))

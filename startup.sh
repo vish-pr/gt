@@ -1,6 +1,5 @@
 #!/bin/bash
 
-export github="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"
 # if current directory is not gt, clone gt
 if [[ $(basename "$PWD") != "gt" && ! -d "gt" ]]; then
   git clone https://github.com/vish-pr/gt
@@ -15,17 +14,30 @@ if [ ! -f "tinygrad/setup.py" ]; then
 fi
 cd tinygrad
 git pull
-python3 -m pip install -e .
+# if git pull not already up-to-date
+if [[ $(git pull) != *"Already up to date."* ]]; then
+  python3 -m pip install -e .
+fi
 cd ..
 
 
 # used in tiny_stories tokenizer
 pip install sentencepiece
 
+# in tinygrad GRAPH=1 needs it.
+pip install pydot
+sudo apt-get install graphviz
+
 # download tiny_stories
 # if stories15M.pt file not exist, download it
 if [ ! -f "tiny_stories/weights/stories15M.pt" ]; then
     wget -P tiny_stories/weights https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.pt
+fi
+if [ ! -f "tiny_stories/weights/stories260K.pt" ]; then
+    wget -P tiny_stories/weights https://huggingface.co/karpathy/tinyllamas/resolve/main/stories260K/stories260K.pt
+fi
+if [ ! -f "tiny_stories/weights/tok512.model" ]; then
+    wget -P tiny_stories/weights https://huggingface.co/karpathy/tinyllamas/resolve/main/stories260K/tok512.model
 fi
 if [ ! -f "tiny_stories/weights/tokenizer.model" ]; then
     wget -P tiny_stories/weights https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model
