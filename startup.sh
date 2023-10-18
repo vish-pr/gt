@@ -20,14 +20,6 @@ if [[ $(git pull) != *"Already up to date."* ]]; then
 fi
 cd ..
 
-
-# used in tiny_stories tokenizer
-pip install sentencepiece
-
-# in tinygrad GRAPH=1 needs it.
-pip install pydot
-sudo apt-get install graphviz
-
 # download tiny_stories
 # if stories15M.pt file not exist, download it
 if [ ! -f "tiny_stories/weights/stories15M.pt" ]; then
@@ -42,3 +34,17 @@ fi
 if [ ! -f "tiny_stories/weights/tokenizer.model" ]; then
     wget -P tiny_stories/weights https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model
 fi
+if [ ! -f "tiny_stories/data/TinyStoriesV2-GPT4-train.txt" ]; then
+    wget -P tiny_stories/data https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-train.txt
+fi
+if [ ! -f "tiny_stories/data/TinyStoriesV2-GPT4-valid.txt" ]; then
+    wget -P tiny_stories/data https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-test.txt
+fi
+
+
+# used in tiny_stories tokenizer
+pip install sentencepiece
+
+# in tinygrad GRAPH=1 needs it.
+pip install pydot
+sudo apt-get install graphviz

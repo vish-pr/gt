@@ -4,18 +4,18 @@
 # https://github.com/karpathy/llama2.c
 # https://github.com/tinygrad/tinygrad/blob/master/examples/llama.py
 
+from ctypes.wintypes import BYTE
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from sentencepiece import SentencePieceProcessor
 
-from tinygrad.helpers import CI, dtypes, getenv
+from tinygrad.helpers import CI, getenv
 from tinygrad.jit import TinyJit
 from tinygrad.nn import Embedding, Linear
 from tinygrad.nn.state import load_state_dict, torch_load
-from tinygrad.shape.symbolic import Variable, sym_infer
 from tinygrad.tensor import Tensor
 
 JIT = getenv("JIT", 0 if CI else 1)
@@ -144,7 +144,6 @@ class Transformer:
   def __init__(self, dim, multiple_of, n_heads, n_layers, norm_eps, vocab_size, linear=Linear, max_batch_size=32, max_seq_len=1024, ffn_dim_multiplier=None, n_kv_heads=None, rope_theta=10000, **kwargs):
     self.layers = [TransformerBlock(dim, multiple_of, n_heads, n_kv_heads,
                                     norm_eps, linear, ffn_dim_multiplier) for _ in range(n_layers)]
-    self.kv_caches = [(None, None) for _ in range(n_layers)]
     self.norm = RMSNorm(dim, norm_eps)
     self.tok_embeddings = Embedding(vocab_size, dim)
     self.output = linear(dim, vocab_size, bias=False)
@@ -173,12 +172,8 @@ class Transformer:
     return self.postprocess(h, temperature)
 
 
-TOKENIZER_MODEL = "tokenizer.model"  # the llama sentencepiece tokenizer model
-
-
 class Tokenizer:
-    def __init__(self, tokenizer_model=None):
-        model_path = tokenizer_model if tokenizer_model else TOKENIZER_MODEL
+    def __init__(self, model_path):
         assert os.path.isfile(model_path), model_path
         self.sp_model = SentencePieceProcessor()
         self.sp_model.LoadFromFile(model_path)
@@ -205,9 +200,19 @@ class Tokenizer:
         return self.sp_model.Decode(t)
 
 
+def train():
+  # read tiny_stories/data/TinyStoriesV2-GPT4-train.txt
+  data_loader = DataLoader('tiny_stories/data/TinyStoriesV2-GPT4-train.txt',
+                           'tiny_stories/data/TinyStoriesV2-GPT4-valid.txt', 10)
+  data_loader.preprocess('tiny_stories/data/TinyStoriesV2-GPT4-valid.txt')
+  exit()
+
+
+
 if __name__ == '__main__':
+  train()
   checkpoint_path = 'tiny_stories/weights/stories15M.pt'
-  checkpoint_path = 'tiny_stories/weights/stories260K.pt'
+  # checkpoint_path = 'tiny_stories/weights/stories260K.pt'
   assert Path(checkpoint_path).is_file()
   check_point = torch_load(checkpoint_path)
   model_args = ModelArgs(**check_point['model_args'])
@@ -219,17 +224,20 @@ if __name__ == '__main__':
       state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
   load_state_dict(model, state_dict, strict=False)
   tokenizer_path = 'tiny_stories/weights/tokenizer.model'
-  tokenizer_path = 'tiny_stories/weights/tok512.model'
+  # tokenizer_path = 'tiny_stories/weights/tok512.model'
   assert Path(tokenizer_path).is_file()
   enc = Tokenizer(tokenizer_path)
-  tokens = enc.encode('Ron had two cats,',  bos=True, eos=True)
-  print(enc.decode(tokens))
-  next = model(Tensor([tokens]), start_pos=0).realize()
-  # next = model(Tensor(tokens).unsqueeze(0), start_pos=len(token)).squeeze(0).realize()
-  next = next.squeeze(0)
-  print(next.shape)
-  print(next.argmax(1).numpy().astype(int), model_args.vocab_size)
-  out = next.argmax(1).numpy().astype(int).tolist()
-  for index, i in enumerate(out):
-    print(f'{enc.decode(tokens[index])} -> {enc.decode([i])}')
+  tokens = enc.encode(
+      'One day, Lily met a Shoggoth', True, False)
+  for i in range(100):
+    next = model(Tensor([tokens]), start_pos=0).realize()
+    next = next.squeeze(0)
+    next = next.argmax(1).numpy().astype(int).tolist()
+    print(next)
+    assert len(next) == len(tokens)
+    for index, t in enumerate(tokens):
+       print(
+           f'{enc.decode([int(t)])} -> {enc.decode([int(next[index])])}')
+    tokens.append(next[-1])
   # print(enc.decode(next.argmax(1).numpy().astype(int).tolist()))
+
