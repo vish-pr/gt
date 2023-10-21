@@ -1,243 +1,89 @@
-#!/usr/bin/env python3
-
-# code sources:
-# https://github.com/karpathy/llama2.c
-# https://github.com/tinygrad/tinygrad/blob/master/examples/llama.py
-
-from ctypes.wintypes import BYTE
-import os
-from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from time import time
 
+from data_loader import DataLoader
 from sentencepiece import SentencePieceProcessor
 
-from tinygrad.helpers import CI, getenv
-from tinygrad.jit import TinyJit
-from tinygrad.nn import Embedding, Linear
-from tinygrad.nn.state import load_state_dict, torch_load
+from tinygrad.nn.optim import SGD
+from tinygrad.nn.state import get_parameters, load_state_dict, torch_load
 from tinygrad.tensor import Tensor
 
-JIT = getenv("JIT", 0 if CI else 1)
-
-class RMSNorm:
-  def __init__(self, dim, eps=1e-6):
-    self.eps = eps
-    self.weight = Tensor.ones(dim)
-
-  def __call__(self, x: Tensor):
-    # TODO: convert to float?
-    return (x * (x.pow(2).mean(-1, keepdim=True) + self.eps).rsqrt()) * self.weight
+from llama import ModelArgs, Transformer
 
 
-@dataclass
-class ModelArgs:
-    # default hyperparameters for the Llama 7B model
-    dim: int = 4096
-    n_layers: int = 32
-    n_heads: int = 32
-    n_kv_heads: Optional[int] = None
-    vocab_size: int = 32000
-    hidden_dim: Optional[int] = None
-    multiple_of: int = 256  # MLP hidden layer size will be multiple of
-    norm_eps: float = 1e-5
-    max_seq_len: int = 2048
-    dropout: float = 0.0
+class Model:
+  def __init__(self, tokenizer_path, model_args=None, checkpoint_path=None):
+    assert model_args is not None or checkpoint_path is not None
+    self.model = self.load_model(checkpoint_path) if checkpoint_path else Transformer(**vars(model_args))
+    assert Path(tokenizer_path).is_file()
+    self.tokenizer = SentencePieceProcessor()
+    self.tokenizer.LoadFromFile(tokenizer_path)
 
+  def run_with_loss(self, x: Tensor):
+    logits = self.model(x)
+    return logits, x[:, 1:].sparse_categorical_crossentropy(logits[:, :-1, :])
+    # self.last_loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
 
-def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0) -> Tensor:
-  freqs = 1.0 / (theta ** (Tensor.arange(0, dim, 2)[:(dim // 2)] / dim))
-  freqs = Tensor.arange(end).unsqueeze(dim=1)*freqs.unsqueeze(dim=0)
-  return Tensor.stack([Tensor.cos(freqs), Tensor.sin(freqs)], dim=-1).reshape(1, end, 1, dim//2, 2)
+  def train(self):
+    data_loader = DataLoader('tiny_stories/data/TinyStoriesV2-GPT4-train.txt',
+                             'tiny_stories/data/TinyStoriesV2-GPT4-valid.txt', 1, self.tokenizer)
+    optim = SGD(get_parameters(self.model), lr=0.01)
+    for i in range(10):
+      x = data_loader.get_batch()
+      logits, loss = self.run_with_loss(x)
+      optim.zero_grad()
+      loss.backward()
+      optim.step()
+      # print(loss.item())
 
+  def __call__(self, str, debug=False):
+    tokens = self.tokenizer.Encode(str)
+    logits, loss = self.run_with_loss(Tensor([tokens]))
+    next = logits.squeeze(0).argmax(-1).numpy().astype(int).tolist()
+    if debug:
+      for index, t in enumerate(tokens):
+        print(
+            f'{self.tokenizer.Decode([int(t)])} -> {self.tokenizer.Decode([int(next[index])])}')
+      # print(f'loss: {loss.item()}')
+      # print(f'input: {str}')
+      # print(f'output: {self.tokenizer.Decode(x)}')
+    return self.tokenizer.Decode(next), loss
 
-# (a+i*b) * (c+i*d) = (ac-bd) + i*(ad+bc)
-def complex_mult(A, c, d):
-  a, b = A[:, :, :, :, 0:1], A[:, :, :, :, 1:2]
-  ro = a*c - b*d
-  co = a*d + b*c
-  return ro.cat(co, dim=-1)
-
-
-def apply_rotary_emb(xq, xk, freqs_cis) -> Tuple[Tensor, Tensor]:
-  assert freqs_cis.shape[1] == xq.shape[1] and freqs_cis.shape[1] == xk.shape[
-      1], f"freqs_cis shape mismatch {freqs_cis.shape} xq:{xq.shape} xk:{xk.shape}"
-  xq = xq.reshape(*xq.shape[0:-1], -1, 2)
-  xk = xk.reshape(*xk.shape[0:-1], -1, 2)
-  assert len(xq.shape) == 5 and len(
-      xk.shape) == 5 and len(freqs_cis.shape) == 5
-  c, d = freqs_cis[:, :xq.shape[1], :, :,
-                   0:1], freqs_cis[:, :xq.shape[1], :, :, 1:2]
-  xq_out = complex_mult(xq, c, d)
-  xk_out = complex_mult(xk, c, d)
-  return xq_out.flatten(3), xk_out.flatten(3)
-
-
-def repeat_kv(x: Tensor, n_rep: int) -> Tensor:
-  bs, seqlen, n_kv_heads, head_dim = x.shape
-  if n_rep == 1:
-      return x
-  return x[:, :, :, None, :].expand(bs, seqlen, n_kv_heads, n_rep, head_dim).reshape(bs, seqlen, n_kv_heads * n_rep, head_dim)
-
-
-class Attention:
-  def __init__(self, dim, n_heads, n_kv_heads):
-    self.n_heads = n_heads
-    self.n_kv_heads = n_kv_heads if n_kv_heads is not None else n_heads
-    self.head_dim = dim // n_heads
-    self.n_rep = self.n_heads // self.n_kv_heads
-
-    self.wq = Linear(dim, self.n_heads * self.head_dim, bias=False)
-    self.wk = Linear(dim, self.n_kv_heads * self.head_dim, bias=False)
-    self.wv = Linear(dim, self.n_kv_heads * self.head_dim, bias=False)
-    self.wo = Linear(self.n_heads * self.head_dim, dim, bias=False)
-
-  def __call__(self, x: Tensor, freqs_cis: Tensor) -> Tensor:
-    bsz, seqlen, _ = x.shape
-    xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
-    xq = xq.reshape(xq.shape[0], xq.shape[1], self.n_heads, self.head_dim)
-    xk = xk.reshape(xk.shape[0], xk.shape[1], self.n_kv_heads, self.head_dim)
-    xv = xv.reshape(xv.shape[0], xv.shape[1], self.n_kv_heads, self.head_dim)
-    xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
-
-    keys, values = xk, xv
-    keys, values = repeat_kv(keys, self.n_rep).realize(
-    ), repeat_kv(values, self.n_rep).realize()
-    attn = Tensor.scaled_dot_product_attention(xq.transpose(1, 2), keys.transpose(
-        1, 2), values.transpose(1, 2), is_causal=True).transpose(1, 2).reshape(bsz, seqlen, -1)
-    return self.wo(attn).realize()
-
-
-class FeedForward:
-  def __init__(self, dim, hidden_dim, multiple_of, ffn_dim_multiplier=None):
-    # TODO: what is this?
-    hidden_dim = int(2 * hidden_dim / 3)
-    # custom dim factor multiplier
-    if ffn_dim_multiplier is not None:
-      hidden_dim = int(ffn_dim_multiplier * hidden_dim)
-    hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
-    self.w1 = Linear(dim, hidden_dim, bias=False)
-    self.w2 = Linear(hidden_dim, dim, bias=False)
-    self.w3 = Linear(dim, hidden_dim, bias=False)
-
-  def __call__(self, x: Tensor) -> Tensor:
-    return self.w2(self.w1(x).silu() * self.w3(x))
-
-
-class TransformerBlock:
-  def __init__(self, dim, multiple_of, n_heads, n_kv_heads, norm_eps, linear=Linear, ffn_dim_multiplier=None):
-    self.attention = Attention(dim, n_heads, n_kv_heads)
-    self.feed_forward = FeedForward(
-        dim, 4*dim, multiple_of, ffn_dim_multiplier)
-    self.attention_norm = RMSNorm(dim, norm_eps)
-    self.ffn_norm = RMSNorm(dim, norm_eps)
-
-  def __call__(self, x: Tensor, freqs_cis: Tensor):
-    bsz, seqlen, _ = x.shape
-    output = self.attention(self.attention_norm(
-        x), freqs_cis)
-    h = x + output
-    return (h + self.feed_forward(self.ffn_norm(h))).realize()
-
-
-class Transformer:
-  def __init__(self, dim, multiple_of, n_heads, n_layers, norm_eps, vocab_size, linear=Linear, max_batch_size=32, max_seq_len=1024, ffn_dim_multiplier=None, n_kv_heads=None, rope_theta=10000, **kwargs):
-    self.layers = [TransformerBlock(dim, multiple_of, n_heads, n_kv_heads,
-                                    norm_eps, linear, ffn_dim_multiplier) for _ in range(n_layers)]
-    self.norm = RMSNorm(dim, norm_eps)
-    self.tok_embeddings = Embedding(vocab_size, dim)
-    self.output = linear(dim, vocab_size, bias=False)
-    self.freqs_cis = precompute_freqs_cis(
-        dim // n_heads, max_seq_len * 2, rope_theta)
-    self.norm_output = lambda x: self.output(self.norm(x))
-
-    self.tok_embeddings_jitted = TinyJit(
-        lambda x: self.tok_embeddings(x).realize())
-    self.postprocess_jitted = TinyJit(self.postprocess)
-    self.layers_jitted = [TinyJit(layer.__call__) for layer in self.layers]
-
-  def postprocess(self, x, temperature: Optional[float]):
-    logits = self.output(self.norm(x))
-    if temperature is not None:
-        return (logits[:, -1, :] / (temperature+1e-10)).softmax().flatten().realize()
-    return logits.realize()
-
-  def __call__(self, tokens: Tensor, start_pos: int, temperature: Optional[float] = None):
-    _bsz, seqlen = tokens.shape
-    h = self.tok_embeddings(tokens)
-    freqs_cis = self.freqs_cis.shrink(((0, self.freqs_cis.shape[0]), (start_pos, start_pos+seqlen), (
-        0, self.freqs_cis.shape[2]), (0, self.freqs_cis.shape[3]), (0, self.freqs_cis.shape[4])))
-    for layer in self.layers:
-      h = layer(h, freqs_cis=freqs_cis)
-    return self.postprocess(h, temperature)
-
-
-class Tokenizer:
-    def __init__(self, model_path):
-        assert os.path.isfile(model_path), model_path
-        self.sp_model = SentencePieceProcessor()
-        self.sp_model.LoadFromFile(model_path)
-        self.model_path = model_path
-
-        # BOS / EOS token IDs
-        self.n_words: int = self.sp_model.vocab_size()
-        self.bos_id: int = self.sp_model.bos_id()
-        self.eos_id: int = self.sp_model.eos_id()
-        self.pad_id: int = self.sp_model.pad_id()
-        # print(f"#words: {self.n_words} - BOS ID: {self.bos_id} - EOS ID: {self.eos_id}")
-        assert self.sp_model.vocab_size() == self.sp_model.get_piece_size()
-
-    def encode(self, s: str, bos: bool, eos: bool) -> List[int]:
-        assert type(s) is str
-        t = self.sp_model.Encode(s)
-        if bos:
-            t = [self.bos_id] + t
-        if eos:
-            t = t + [self.eos_id]
-        return t
-
-    def decode(self, t: List[int]) -> str:
-        return self.sp_model.Decode(t)
-
-
-def train():
-  # read tiny_stories/data/TinyStoriesV2-GPT4-train.txt
-  data_loader = DataLoader('tiny_stories/data/TinyStoriesV2-GPT4-train.txt',
-                           'tiny_stories/data/TinyStoriesV2-GPT4-valid.txt', 10)
-  data_loader.preprocess('tiny_stories/data/TinyStoriesV2-GPT4-valid.txt')
-  exit()
-
+  def load_model(self, checkpoint_path):
+    assert Path(checkpoint_path).is_file()
+    check_point = torch_load(checkpoint_path)
+    state_dict = check_point['model']
+    unwanted_prefix = '_orig_mod.'
+    for k, v in list(state_dict.items()):
+      if k.startswith(unwanted_prefix):
+        state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
+    model_args = ModelArgs(**check_point['model_args'])
+    model = Transformer(**vars(model_args))
+    load_state_dict(model, state_dict, strict=False)
+    dummy_x = Tensor.zeros(1, 1)
+    start_time = time()
+    model(dummy_x).realize()
+    print(f'dummy run in {((time() - start_time)*1000):.2f}ms')
+    return model
 
 
 if __name__ == '__main__':
-  train()
-  checkpoint_path = 'tiny_stories/weights/stories15M.pt'
-  # checkpoint_path = 'tiny_stories/weights/stories260K.pt'
-  assert Path(checkpoint_path).is_file()
-  check_point = torch_load(checkpoint_path)
-  model_args = ModelArgs(**check_point['model_args'])
-  model = Transformer(**vars(model_args))
-  state_dict = check_point['model']
-  unwanted_prefix = '_orig_mod.'
-  for k, v in list(state_dict.items()):
-    if k.startswith(unwanted_prefix):
-      state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
-  load_state_dict(model, state_dict, strict=False)
-  tokenizer_path = 'tiny_stories/weights/tokenizer.model'
-  # tokenizer_path = 'tiny_stories/weights/tok512.model'
+  # checkpoint_path = 'tiny_stories/weights/stories15M.pt'
+  checkpoint_path = 'tiny_stories/weights/stories260K.pt'
+  # tokenizer_path = 'tiny_stories/weights/tokenizer.model'
+  tokenizer_path = 'tiny_stories/weights/tok512.model'
   assert Path(tokenizer_path).is_file()
-  enc = Tokenizer(tokenizer_path)
-  tokens = enc.encode(
-      'One day, Lily met a Shoggoth', True, False)
-  for i in range(100):
-    next = model(Tensor([tokens]), start_pos=0).realize()
-    next = next.squeeze(0)
-    next = next.argmax(1).numpy().astype(int).tolist()
-    print(next)
-    assert len(next) == len(tokens)
-    for index, t in enumerate(tokens):
-       print(
-           f'{enc.decode([int(t)])} -> {enc.decode([int(next[index])])}')
-    tokens.append(next[-1])
-  # print(enc.decode(next.argmax(1).numpy().astype(int).tolist()))
+  model = Model(checkpoint_path=checkpoint_path, tokenizer_path=tokenizer_path)
+  op, loss = model('Once upon a time, in a forest', True)
+  print(op)
+  model = Model(tokenizer_path=tokenizer_path, model_args=ModelArgs())
+  model.train()
 
+  # for i in range(100):
+  #   next = model(Tensor([tokens]), start_pos=0).realize()
+  #   next = next.squeeze(0)
+  #   next = next.argmax(1).numpy().astype(int).tolist()
+  #   print(next)
+  #   assert len(next) == len(tokens)
+  #   tokens.append(next[-1])
+  # print(enc.decode(next.argmax(1).numpy().astype(int).tolist()))
