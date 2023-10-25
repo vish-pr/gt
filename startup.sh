@@ -14,10 +14,7 @@ if [ ! -f "tinygrad/setup.py" ]; then
 fi
 cd tinygrad
 git pull
-# if git pull not already up-to-date
-if [[ $(git pull) != *"Already up to date."* ]]; then
-  python3 -m pip install -e .
-fi
+python3 -m pip install -e .
 cd ..
 pip install pytest
 pip install pycuda

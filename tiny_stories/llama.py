@@ -12,8 +12,6 @@ from tinygrad.jit import TinyJit
 from tinygrad.nn import Embedding, Linear
 from tinygrad.tensor import Tensor
 
-JIT = getenv("JIT", 0 if CI else 1)
-
 class RMSNorm:
   def __init__(self, dim, eps=1e-6):
     self.eps = eps
@@ -115,10 +113,6 @@ class Transformer:
     self.output = Linear(dim, vocab_size, bias=False)
     self.freqs_cos, self.freq_sin = rope.precompute_freqs_cis(dim // n_heads, 4096, rope_theta)
     self.norm_output = lambda x: self.output(self.norm(x))
-
-    self.tok_embeddings_jitted = TinyJit(
-        lambda x: self.tok_embeddings(x).realize())
-    self.layers_jitted = [TinyJit(layer.__call__) for layer in self.layers]
 
   def __call__(self, tokens: Tensor, start_pos: int = 0, temperature: Optional[float] = None):
     _bsz, seqlen = tokens.shape
