@@ -20,12 +20,13 @@ if [[ $(git pull) != *"Already up to date."* ]]; then
 fi
 cd ..
 pip install pytest
+pip install pycuda
 
 # used in tiny_stories tokenizer
 pip install sentencepiece
 # download tiny_stories
 if [ ! -f "tiny_stories/data/TinyStoriesV2-GPT4-valid.txt" ]; then
-    wget -P tiny_stories/data https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-test.txt
+    wget -P tiny_stories/data https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-valid.txt
 fi
 if [ ! -f "tiny_stories/weights/stories260K.pt" ]; then
     wget -P tiny_stories/weights https://huggingface.co/karpathy/tinyllamas/resolve/main/stories260K/stories260K.pt

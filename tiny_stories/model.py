@@ -4,7 +4,6 @@ from pathlib import Path
 from time import time
 from typing import List
 
-from arrow import get
 from data_loader import DataLoader
 from llama import ModelArgs, Transformer
 from sentencepiece import SentencePieceProcessor
