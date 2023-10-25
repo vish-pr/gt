@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # code sources:
 # https://github.com/karpathy/llama2.c
 # https://github.com/tinygrad/tinygrad/blob/master/examples/llama.py
@@ -7,6 +5,7 @@
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
+import rope
 
 from tinygrad.helpers import CI, getenv
 from tinygrad.jit import TinyJit
@@ -40,34 +39,6 @@ class ModelArgs:
     dropout: float = 0.0
 
 
-def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0) -> Tensor:
-  freqs = 1.0 / (theta ** (Tensor.arange(0, dim, 2)[:(dim // 2)] / dim))
-  freqs = Tensor.arange(end).unsqueeze(dim=1)*freqs.unsqueeze(dim=0)
-  return Tensor.stack([Tensor.cos(freqs), Tensor.sin(freqs)], dim=-1).reshape(1, end, 1, dim//2, 2)
-
-
-# (a+i*b) * (c+i*d) = (ac-bd) + i*(ad+bc)
-def complex_mult(A, c, d):
-  a, b = A[:, :, :, :, 0:1], A[:, :, :, :, 1:2]
-  ro = a*c - b*d
-  co = a*d + b*c
-  return ro.cat(co, dim=-1)
-
-
-def apply_rotary_emb(xq, xk, freqs_cis) -> Tuple[Tensor, Tensor]:
-  assert freqs_cis.shape[1] == xq.shape[1] and freqs_cis.shape[1] == xk.shape[
-      1], f"freqs_cis shape mismatch {freqs_cis.shape} xq:{xq.shape} xk:{xk.shape}"
-  xq = xq.reshape(*xq.shape[0:-1], -1, 2)
-  xk = xk.reshape(*xk.shape[0:-1], -1, 2)
-  assert len(xq.shape) == 5 and len(
-      xk.shape) == 5 and len(freqs_cis.shape) == 5
-  c, d = freqs_cis[:, :xq.shape[1], :, :,
-                   0:1], freqs_cis[:, :xq.shape[1], :, :, 1:2]
-  xq_out = complex_mult(xq, c, d)
-  xk_out = complex_mult(xk, c, d)
-  return xq_out.flatten(3), xk_out.flatten(3)
-
-
 def repeat_kv(x: Tensor, n_rep: int) -> Tensor:
   bs, seqlen, n_kv_heads, head_dim = x.shape
   if n_rep == 1:
@@ -87,20 +58,20 @@ class Attention:
     self.wv = Linear(dim, self.n_kv_heads * self.head_dim, bias=False)
     self.wo = Linear(self.n_heads * self.head_dim, dim, bias=False)
 
-  def __call__(self, x: Tensor, freqs_cis: Tensor) -> Tensor:
+  def __call__(self, x: Tensor, freqs_cos: Tensor, freqs_sin: Tensor) -> Tensor:
     bsz, seqlen, _ = x.shape
     xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
     xq = xq.reshape(xq.shape[0], xq.shape[1], self.n_heads, self.head_dim)
     xk = xk.reshape(xk.shape[0], xk.shape[1], self.n_kv_heads, self.head_dim)
     xv = xv.reshape(xv.shape[0], xv.shape[1], self.n_kv_heads, self.head_dim)
-    xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
+    xq, xk = rope.apply_rotary_emb(xq, xk, freqs_cos, freqs_sin)
 
     keys, values = xk, xv
     keys, values = repeat_kv(keys, self.n_rep).realize(
     ), repeat_kv(values, self.n_rep).realize()
     attn = Tensor.scaled_dot_product_attention(xq.transpose(1, 2), keys.transpose(
         1, 2), values.transpose(1, 2), is_causal=True).transpose(1, 2).reshape(bsz, seqlen, -1)
-    return self.wo(attn).realize()
+    return self.wo(attn)
 
 
 class FeedForward:
@@ -120,30 +91,29 @@ class FeedForward:
 
 
 class TransformerBlock:
-  def __init__(self, dim, multiple_of, n_heads, n_kv_heads, norm_eps, linear=Linear, ffn_dim_multiplier=None):
+  def __init__(self, dim, multiple_of, n_heads, n_kv_heads, norm_eps, ffn_dim_multiplier=None):
     self.attention = Attention(dim, n_heads, n_kv_heads)
     self.feed_forward = FeedForward(
         dim, 4*dim, multiple_of, ffn_dim_multiplier)
     self.attention_norm = RMSNorm(dim, norm_eps)
     self.ffn_norm = RMSNorm(dim, norm_eps)
 
-  def __call__(self, x: Tensor, freqs_cis: Tensor):
-    bsz, seqlen, _ = x.shape
+  def __call__(self, x: Tensor, freqs_cos, freq_sin) -> Tensor:
     output = self.attention(self.attention_norm(
-        x), freqs_cis)
+        x), freqs_cos, freq_sin)
     h = x + output
-    return (h + self.feed_forward(self.ffn_norm(h))).realize()
+    return h + self.feed_forward(self.ffn_norm(h))
 
 
 class Transformer:
-  def __init__(self, dim, multiple_of, n_heads, n_layers, norm_eps, vocab_size, linear=Linear, max_batch_size=32, max_seq_len=1024, ffn_dim_multiplier=None, n_kv_heads=None, rope_theta=10000, **kwargs):
+  def __init__(self, dim, multiple_of, n_heads, n_layers, norm_eps, vocab_size, max_seq_len=2048, ffn_dim_multiplier=None, n_kv_heads=None, rope_theta=10000, **kwargs):
     self.layers = [TransformerBlock(dim, multiple_of, n_heads, n_kv_heads,
-                                    norm_eps, linear, ffn_dim_multiplier) for _ in range(n_layers)]
+                                    norm_eps, ffn_dim_multiplier) for _ in range(n_layers)]
     self.norm = RMSNorm(dim, norm_eps)
+    print('vocab_size', vocab_size, 'dim', dim)
     self.tok_embeddings = Embedding(vocab_size, dim)
-    self.output = linear(dim, vocab_size, bias=False)
-    self.freqs_cis = precompute_freqs_cis(
-        dim // n_heads, max_seq_len * 2, rope_theta)
+    self.output = Linear(dim, vocab_size, bias=False)
+    self.freqs_cos, self.freq_sin = rope.precompute_freqs_cis(dim // n_heads, 4096, rope_theta)
     self.norm_output = lambda x: self.output(self.norm(x))
 
     self.tok_embeddings_jitted = TinyJit(
@@ -152,9 +122,7 @@ class Transformer:
 
   def __call__(self, tokens: Tensor, start_pos: int = 0, temperature: Optional[float] = None):
     _bsz, seqlen = tokens.shape
-    h = self.tok_embeddings(tokens)
-    freqs_cis = self.freqs_cis.shrink(((0, self.freqs_cis.shape[0]), (start_pos, start_pos+seqlen), (
-        0, self.freqs_cis.shape[2]), (0, self.freqs_cis.shape[3]), (0, self.freqs_cis.shape[4])))
+    h = self.tok_embeddings_jitted(tokens)
     for layer in self.layers:
-      h = layer(h, freqs_cis=freqs_cis)
+      h = layer(h, self.freqs_cos[0:seqlen], self.freq_sin[0:seqlen])
     return self.output(self.norm(h))

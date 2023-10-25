@@ -15,21 +15,23 @@ class DataLoader:
 
   def __init__(self, train_path: str, valid_path: str, batch_size: int, tokenizer: SentencePieceProcessor):
     self.tokenizer = tokenizer
+    self.tokenizer_name = '_' + str(tokenizer.Decode(42))
+    print('Tokenizer name', self.tokenizer_name)
     self.preprocess(valid_path)
-    self.preprocess(train_path)
+    # self.preprocess(train_path)
     self.valid_data = self.get_data(valid_path)
-    self.train_data = self.get_data(train_path)
+    # self.train_data = self.get_data(train_path)
     self.batch_size = batch_size
 
   def preprocess(self, path, string='<|endoftext|>'):
-    if Path(path + '_processed').is_file():
+    if Path(path + self.tokenizer_name).is_file():
       return
     start_time = time.time()
     buffer = ''
     delta_writing = 0
     delta_tokenizing = 0
     num_of_samples = 0
-    with open(path, 'r') as f, open(path + '_processed', 'w') as f2:
+    with open(path, 'r') as f, open(path + self.tokenizer_name, 'w') as f2:
       index = 0
       while (chunk := f.read(self.BYTES_TO_READ)) or buffer:
         buffer += chunk if chunk else string
@@ -56,7 +58,7 @@ class DataLoader:
 
   def get_data(self, path) -> List[np.ndarray]:
     data = []
-    path = path + '_processed'
+    path = path + self.tokenizer_name
     print(f'Loading {path}')
     with open(path, 'r') as f:
       while line := f.readline():
@@ -67,4 +69,4 @@ class DataLoader:
     data = self.train_data if train else self.valid_data
     batch = random.choices(data, k=self.batch_size)
     max_length = max(len(row) for row in batch)
-    return Tensor([np.pad(row, (0, max_length - len(row)), constant_values=self.tokenizer.eos_id()) for row in batch], dtype=dtypes.int32)
+    return Tensor([np.pad(row, (0, max_length - len(row)), constant_values=self.tokenizer.eos_id()) for row in batch], dtype=dtypes.int32, requires_grad=False)

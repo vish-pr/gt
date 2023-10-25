@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # if current directory is not gt, clone gt
-if [[ $(basename "$PWD") != "gt" && ! -d "gt" ]]; then
+if [[ $(basename "$PWD") != "gt" ]]; then
   git clone https://github.com/vish-pr/gt
   cd gt
 fi
@@ -44,6 +44,7 @@ fi
 
 # used in tiny_stories tokenizer
 pip install sentencepiece
+pip install pytest
 
 # in tinygrad GRAPH=1 needs it.
 pip install pydot
