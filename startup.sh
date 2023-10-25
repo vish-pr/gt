@@ -19,14 +19,19 @@ if [[ $(git pull) != *"Already up to date."* ]]; then
   python3 -m pip install -e .
 fi
 cd ..
+pip install pytest
 
+# used in tiny_stories tokenizer
+pip install sentencepiece
 # download tiny_stories
-# if stories15M.pt file not exist, download it
-if [ ! -f "tiny_stories/weights/stories15M.pt" ]; then
-    wget -P tiny_stories/weights https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.pt
+if [ ! -f "tiny_stories/data/TinyStoriesV2-GPT4-valid.txt" ]; then
+    wget -P tiny_stories/data https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-test.txt
 fi
 if [ ! -f "tiny_stories/weights/stories260K.pt" ]; then
     wget -P tiny_stories/weights https://huggingface.co/karpathy/tinyllamas/resolve/main/stories260K/stories260K.pt
+fi
+if [ ! -f "tiny_stories/weights/stories15M.pt" ]; then
+    wget -P tiny_stories/weights https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.pt
 fi
 if [ ! -f "tiny_stories/weights/tok512.model" ]; then
     wget -P tiny_stories/weights https://huggingface.co/karpathy/tinyllamas/resolve/main/stories260K/tok512.model
@@ -37,14 +42,8 @@ fi
 if [ ! -f "tiny_stories/data/TinyStoriesV2-GPT4-train.txt" ]; then
     wget -P tiny_stories/data https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-train.txt
 fi
-if [ ! -f "tiny_stories/data/TinyStoriesV2-GPT4-valid.txt" ]; then
-    wget -P tiny_stories/data https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-test.txt
-fi
 
 
-# used in tiny_stories tokenizer
-pip install sentencepiece
-pip install pytest
 
 # in tinygrad GRAPH=1 needs it.
 pip install pydot
