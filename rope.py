@@ -13,6 +13,7 @@ def precompute_freqs_cis(head_dim: int, max_seq_len: int, theta: float = 10000.0
   # [[0], [1], [2], [3], ..., [max_seq_len-1]] @ freqs as row vector ->  matrix of shape (max_seq_len, dim/2)
   freqs = Tensor.arange(max_seq_len).unsqueeze(dim=1) * freqs.unsqueeze(dim=0)
   freqs = freqs.reshape(1, max_seq_len, 1, head_dim // 2, 1)  # to match (batch_size, tokens, heads, head_dim//2, parity) parity is cos and sin
+  freqs.requires_grad = False
   return Tensor.cos(freqs), Tensor.sin(freqs)
 
 

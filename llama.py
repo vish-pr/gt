@@ -11,37 +11,14 @@ from tinygrad.helpers import CI, getenv
 from tinygrad.jit import TinyJit
 from tinygrad.nn import Embedding, Linear
 from tinygrad.tensor import Tensor
-
-class RMSNorm:
-  def __init__(self, dim, eps=1e-6):
-    self.eps = eps
-    self.weight = Tensor.ones(dim)
-
-  def __call__(self, x: Tensor):
-    # TODO: convert to float?
-    return (x * (x.pow(2).mean(-1, keepdim=True) + self.eps).rsqrt()) * self.weight
-
-
-@dataclass
-class ModelArgs:
-    # default hyperparameters for the Llama 7B model
-    dim: int = 4096
-    n_layers: int = 32
-    n_heads: int = 32
-    n_kv_heads: Optional[int] = None
-    vocab_size: int = 32000
-    hidden_dim: Optional[int] = None
-    multiple_of: int = 256  # MLP hidden layer size will be multiple of
-    norm_eps: float = 1e-5
-    max_seq_len: int = 2048
-    dropout: float = 0.0
+from norm import RMSNorm
 
 
 def repeat_kv(x: Tensor, n_rep: int) -> Tensor:
   bs, seqlen, n_kv_heads, head_dim = x.shape
   if n_rep == 1:
       return x
-  return x[:, :, :, None, :].expand(bs, seqlen, n_kv_heads, n_rep, head_dim).reshape(bs, seqlen, n_kv_heads * n_rep, head_dim)
+  return x.reshape(bs, seqlen, n_kv_heads, 1, head_dim).expand(bs, seqlen, n_kv_heads, n_rep, head_dim).reshape(bs, seqlen, n_kv_heads * n_rep, head_dim)
 
 
 class Attention:
@@ -65,8 +42,7 @@ class Attention:
     xq, xk = rope.apply_rotary_emb(xq, xk, freqs_cos, freqs_sin)
 
     keys, values = xk, xv
-    keys, values = repeat_kv(keys, self.n_rep).realize(
-    ), repeat_kv(values, self.n_rep).realize()
+    keys, values = repeat_kv(keys, self.n_rep), repeat_kv(values, self.n_rep)
     attn = Tensor.scaled_dot_product_attention(xq.transpose(1, 2), keys.transpose(
         1, 2), values.transpose(1, 2), is_causal=True).transpose(1, 2).reshape(bsz, seqlen, -1)
     return self.wo(attn)
@@ -92,7 +68,7 @@ class TransformerBlock:
   def __init__(self, dim, multiple_of, n_heads, n_kv_heads, norm_eps, ffn_dim_multiplier=None):
     self.attention = Attention(dim, n_heads, n_kv_heads)
     self.feed_forward = FeedForward(
-        dim, 4*dim, multiple_of, ffn_dim_multiplier)
+        dim, 4 * dim, multiple_of, ffn_dim_multiplier)
     self.attention_norm = RMSNorm(dim, norm_eps)
     self.ffn_norm = RMSNorm(dim, norm_eps)
 
@@ -116,7 +92,7 @@ class Transformer:
 
   def __call__(self, tokens: Tensor, start_pos: int = 0, temperature: Optional[float] = None):
     _bsz, seqlen = tokens.shape
-    h = self.tok_embeddings_jitted(tokens)
+    h = self.tok_embeddings(tokens)
     for layer in self.layers:
       h = layer(h, self.freqs_cos[0:seqlen], self.freq_sin[0:seqlen])
     return self.output(self.norm(h))

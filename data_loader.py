@@ -16,11 +16,11 @@ class DataLoader:
   def __init__(self, train_path: str, valid_path: str, batch_size: int, tokenizer: SentencePieceProcessor):
     self.tokenizer = tokenizer
     self.tokenizer_name = '_' + str(tokenizer.Decode(42))
-    print('Tokenizer name', self.tokenizer_name)
+    # print('Tokenizer name', self.tokenizer_name)
     self.preprocess(valid_path)
-    # self.preprocess(train_path)
+    self.preprocess(train_path)
     self.valid_data = self.get_data(valid_path)
-    # self.train_data = self.get_data(train_path)
+    self.train_data = self.get_data(train_path)
     self.batch_size = batch_size
 
   def preprocess(self, path, string='<|endoftext|>'):
@@ -69,4 +69,7 @@ class DataLoader:
     data = self.train_data if train else self.valid_data
     batch = random.choices(data, k=self.batch_size)
     max_length = max(len(row) for row in batch)
-    return Tensor([np.pad(row, (0, max_length - len(row)), constant_values=self.tokenizer.eos_id()) for row in batch], dtype=dtypes.int32, requires_grad=False)
+    max_length = max(max_length, 1050)
+    if max_length > 1050:
+      return self.get_batch(train)
+    return Tensor([np.pad(row, (0, max_length - len(row)), constant_values=self.tokenizer.eos_id()) for row in batch], dtype=dtypes.int32, requires_grad=False).realize()
