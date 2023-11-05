@@ -15,8 +15,9 @@ subprocess.run(["git", "pull"])
 subprocess.run(["python3", "-m", "pip", "install", "-e", "."])
 os.chdir("..")
 
-from tinygrad.ops import Device  # noqa
-if Device.canonicalize(None).upper() != 'CPU':
+# check is args CUDA is set
+if os.getenv("CUDA") == "1":
+  print("CUDA is set")
   subprocess.run(["pip", "install", "pycuda"])
 
 try:

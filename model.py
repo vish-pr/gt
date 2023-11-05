@@ -48,6 +48,8 @@ class Stats:
   backward_ops: int = 0
   # TFLOPS: float
   number_of_allocs: int = 0
+  max_mem_used: int = 0
+
 
 
 @dataclass
@@ -136,9 +138,9 @@ class Model:
       self.model_metadata.stats.backward_ops = GlobalCounters.global_ops - self.model_metadata.stats.forward_ops
       self.model_metadata.stats.train_time = et - mt
       self.model_metadata.stats.number_of_allocs = len([x for x in GlobalCounters.allocs_done if x[0]])
-      self.stats_dump = f'{self.model_metadata.stats.iter},{self.model_metadata.stats.data_loading_time},{self.model_metadata.stats.forward_pass_time},{self.model_metadata.stats.backward_pass_time},{self.model_metadata.stats.train_time},{self.model_metadata.stats.forward_ops},{self.model_metadata.stats.backward_ops},{self.model_metadata.stats.number_of_allocs}\n'
-      # self.stats_dump += f'{backward_pass_time},{backward_ops},{total_train_time}\n'
-    # print(f'loading: {loading:.2f}s, forward: {forward_pass:.2f}s, backward: {backward_pass:.2f}s,{GlobalCounters.global_ops*1e-12/(et-mt):.2f} TFLOPS, loss: {loss.numpy():.2f}')
+      self.model_metadata.stats.max_mem_used = GlobalCounters.max_mem_used
+      # add values to self.model_metadata.stats in a string
+      self.stats_dump += ','.join(str(value) for value in vars(self.model_metadata.stats).values()) + '\n'
     # self.evaluate(x[0], logits[0])
     return loss
 
