@@ -43,12 +43,12 @@ class Stats:
   train_time: float = 0.0
   data_loading_time: float = 0.0
   forward_pass_time: float = 0.0
-  forward_ops: int = 0
+  forward_giga_ops: float = 0.0
   backward_pass_time: float = 0.0
-  backward_ops: int = 0
-  # TFLOPS: float
+  backward_giga_ops: float = 0.0
+  TFLOPS: float = 0.0
   number_of_allocs: int = 0
-  max_mem_used: int = 0
+  max_mem_used: float = 0.0
 
 
 
@@ -78,7 +78,7 @@ class Model:
     assert Path(tokenizer_path).is_file()
     self.tokenizer = SentencePieceProcessor()
     self.tokenizer.LoadFromFile(tokenizer_path)
-    self.data_loader = DataLoader(model_metadata.file_paths.train_path, model_metadata.file_paths.valid_path, 2 if self.cpu else 12, self.tokenizer)
+    self.data_loader = DataLoader(model_metadata.file_paths.train_path, model_metadata.file_paths.valid_path, 2 if self.cpu else 30, self.tokenizer)
     self.model = Transformer(**vars(model_metadata.model_args))
     if model_metadata.file_paths.model_path:
       load_state_dict(self.model, safe_load(model_metadata.file_paths.model_path), strict=False)
@@ -110,47 +110,44 @@ class Model:
     Tensor.training = True
     Tensor.no_grad = False
     GlobalCounters.reset()
-    # print(f's_ ops: {GlobalCounters.global_ops}, mem: {GlobalCounters.global_mem}, params: {GlobalCounters.kernel_count}, mem_used: {GlobalCounters.mem_used/1e9:.2f} GB, mem_cached: {GlobalCounters.mem_cached/1e9:.2f} GB')
     if capture_stats:
       time_start = mt = time.perf_counter()
     x = self.data_loader.get_batch(train=True)
     if capture_stats:
       self.model_metadata.stats.data_loading_time = time.perf_counter() - time_start
-      self.model_metadata.stats.forward_ops = GlobalCounters.global_ops
-      # self.stats_dump += f'{iter},{data_loading_time},{forward_ops},'
       time_start = time.perf_counter()
-
-    # self.avg_data_loading_time = (self.avg_data_loading_time * self.iter + loading) / (self.iter + 1)
 
     logits, loss = self.run_with_loss(x)
     if capture_stats:
       self.model_metadata.stats.forward_pass_time = time.perf_counter() - time_start
-      # self.stats_dump += f'{forward_pass_time},'
-      # self.forward_pass_time = (self.avg_forward_pass_time * self.iter + forward_pass) / (self.iter + 1)
       time_start = time.perf_counter()
+      self.model_metadata.stats.forward_giga_ops = GlobalCounters.global_ops / 1e9
     self.optim.zero_grad()
     loss.backward()
-    # print(f'e_ ops: {GlobalCounters.global_ops}, mem: {GlobalCounters.global_mem}, params: {GlobalCounters.kernel_count}, mem_used: {GlobalCounters.mem_used/1e9:.2f} GB, mem_cached: {GlobalCounters.mem_cached/1e9:.2f} GB')
     self.optim.step()
     if capture_stats:
       et = time.perf_counter()
+      self.model_metadata.stats.train_loss = loss.numpy().item()
       self.model_metadata.stats.backward_pass_time = et - time_start
-      self.model_metadata.stats.backward_ops = GlobalCounters.global_ops - self.model_metadata.stats.forward_ops
+      self.model_metadata.stats.backward_giga_ops = GlobalCounters.global_ops / 1e9 - self.model_metadata.stats.forward_giga_ops
       self.model_metadata.stats.train_time = et - mt
+      self.model_metadata.stats.TFLOPS = GlobalCounters.global_ops / 1e12 / self.model_metadata.stats.train_time
       self.model_metadata.stats.number_of_allocs = len([x for x in GlobalCounters.allocs_done if x[0]])
-      self.model_metadata.stats.max_mem_used = GlobalCounters.max_mem_used
-      # add values to self.model_metadata.stats in a string
-      self.stats_dump += ','.join(str(value) for value in vars(self.model_metadata.stats).values()) + '\n'
+      self.model_metadata.stats.max_mem_used = GlobalCounters.max_mem_used / 1e9
+      self.stats_dump += ','.join(f'{value:.3f}' if isinstance(value, float) else str(value)
+                                  for value in vars(self.model_metadata.stats).values()) + '\n'
     # self.evaluate(x[0], logits[0])
     return loss
 
   def train(self):
     # self.one_train_pass()
     # print(f'size of model and optim is {GlobalCounters.mem_used/1e6:.2f} MB')
-    end = self.model_metadata.stats.iter + 1025
+    end = self.model_metadata.stats.iter + 10000
+    self.model_metadata.stats.batch_size = self.data_loader.batch_size
     for self.model_metadata.stats.iter in range(self.model_metadata.stats.iter, end):
       loss = self.one_train_pass(capture_stats=self.model_metadata.stats.iter % 5 == 0)
-      if self.model_metadata.stats.iter % 25 == 0:
+      if self.model_metadata.stats.iter % 100 == 0:
+        self.validate()
         self.save(loss.numpy().item())
 
   def evaluate(self, x, y):
@@ -164,15 +161,12 @@ class Model:
 
   def validate(self):
     Tensor.training = False
-    for param in get_parameters(self.model):
-      print(param)
-    for i in range(1):
-      x = self.data_loader.get_batch(train=False)
-      print(x.shape)
-      logits, loss = self.run_with_loss(x)
-      print((logits[:, :-1:].argmax(-1) == x[:, 1::]).numpy())
-      accuracy = (logits[:, :-1:].argmax(-1) == x[:, 1::]).mean()
-      print(f'accuracy: {accuracy.numpy()}, loss: {loss.numpy()}')
+    Tensor.no_grad = True
+    x = self.data_loader.get_batch(train=False)
+    logits, loss = self.run_with_loss(x)
+    accuracy = (logits[:, :-1:].argmax(-1) == x[:, 1::]).mean()
+    print(f'validation: accuracy: {accuracy.numpy()}, loss: {loss.numpy()}')
+    self.model_metadata.stats.valid_loss = loss.numpy().item()
 
   def __call__(self, str, debug=False):
     tokens = self.tokenizer.Encode(str)
