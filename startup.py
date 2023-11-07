@@ -17,7 +17,6 @@ os.chdir("..")
 
 # check is args CUDA is set
 if os.getenv("CUDA") == "1":
-  print("CUDA is set")
   subprocess.run(["pip", "install", "pycuda"])
 
 try:

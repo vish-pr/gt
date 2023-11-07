@@ -13,7 +13,7 @@ from tinygrad.tensor import Tensor
 class DataLoader:
   BYTES_TO_READ = 1024 * 1024 * 100  # 100 MB
 
-  def __init__(self, train_path: str, valid_path: str, batch_size: int, tokenizer: SentencePieceProcessor):
+  def __init__(self, train_path: str, valid_path: str, batch_size: int, tokenizer: SentencePieceProcessor, cpu=False):
     self.tokenizer = tokenizer
     self.tokenizer_name = '_' + str(tokenizer.Decode(42))
     # print('Tokenizer name', self.tokenizer_name)
@@ -22,6 +22,13 @@ class DataLoader:
     self.valid_data = self.get_data(valid_path)
     self.train_data = self.get_data(train_path)
     self.batch_size = batch_size
+    self.max_tokens = 1050
+    if cpu:
+      self.array = np.empty((self.batch_size, self.max_tokens), dtype=np.int32)
+    else:
+      import pycuda.driver as cuda
+      self.array = cuda.pagelocked_empty((self.batch_size, self.max_tokens), dtype=np.int32)
+
 
   def preprocess(self, path, string='<|endoftext|>'):
     if Path(path + self.tokenizer_name).is_file():
@@ -72,4 +79,6 @@ class DataLoader:
     max_length = max(max_length, 1050)
     if max_length > 1050:
       return self.get_batch(train)
-    return Tensor([np.pad(row, (0, max_length - len(row)), constant_values=self.tokenizer.eos_id()) for row in batch], dtype=dtypes.int32, requires_grad=False).realize()
+    for index, row in enumerate(batch):
+      self.array[index, :] = np.pad(row, (0, max_length - len(row)), constant_values=self.tokenizer.eos_id())
+    return Tensor(self.array, dtype=dtypes.int32, requires_grad=False)

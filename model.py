@@ -35,20 +35,19 @@ class ModelArgs:
 
 @dataclass
 class Stats:
-  train_loss: float = float('inf')
-  valid_loss: float = float('inf')
   iter: int = 0
-  batch_size: int = 0
-  # All below stats are for a single iteration
   train_time: float = 0.0
   data_loading_time: float = 0.0
   forward_pass_time: float = 0.0
-  forward_giga_ops: float = 0.0
   backward_pass_time: float = 0.0
+  forward_giga_ops: float = 0.0
   backward_giga_ops: float = 0.0
   TFLOPS: float = 0.0
   number_of_allocs: int = 0
   max_mem_used: float = 0.0
+  batch_size: int = 0
+  train_loss: float = float('inf')
+  valid_loss: float = float('inf')
 
 
 
@@ -78,7 +77,8 @@ class Model:
     assert Path(tokenizer_path).is_file()
     self.tokenizer = SentencePieceProcessor()
     self.tokenizer.LoadFromFile(tokenizer_path)
-    self.data_loader = DataLoader(model_metadata.file_paths.train_path, model_metadata.file_paths.valid_path, 2 if self.cpu else 30, self.tokenizer)
+    self.data_loader = DataLoader(model_metadata.file_paths.train_path, model_metadata.file_paths.valid_path,
+                                  2 if self.cpu else 30, self.tokenizer, self.cpu)
     self.model = Transformer(**vars(model_metadata.model_args))
     if model_metadata.file_paths.model_path:
       load_state_dict(self.model, safe_load(model_metadata.file_paths.model_path), strict=False)
@@ -86,15 +86,16 @@ class Model:
     self.optim = Opt(self.model)
     self.best_loss = float('inf')
     self.stats_dump = ''
+    # self.next_x = None
 
-  def save(self, loss: float):
-    file_name: str = f'stories_dim{self.model_metadata.model_args.dim}_layer{self.model_metadata.model_args.n_layers}'
+  def save(self):
+    file_name: str = f'stories_dim{self.model_metadata.model_args.dim}_layer{self.model_metadata.model_args.n_layers}_ckpt{int(self.model_metadata.stats.iter/1000)}'
     stats_path = 'tiny_stories/weights/' + file_name + '.csv'
     with open(stats_path, 'a') as f:
       f.write(self.stats_dump)
       self.stats_dump = ''
-    if loss < self.best_loss:
-      self.best_loss = loss
+    if self.model_metadata.stats.train_loss < self.best_loss:
+      self.best_loss = self.model_metadata.stats.train_loss
       model_path = 'tiny_stories/weights/' + file_name + '.model'
       self.model_metadata.file_paths.model_path = model_path
       self.model_metadata.file_paths.stats_path = stats_path
@@ -111,12 +112,12 @@ class Model:
     Tensor.no_grad = False
     GlobalCounters.reset()
     if capture_stats:
-      time_start = mt = time.perf_counter()
-    x = self.data_loader.get_batch(train=True)
+      mt = time.perf_counter()
+    x = self.data_loader.get_batch(train=True).realize()
     if capture_stats:
-      self.model_metadata.stats.data_loading_time = time.perf_counter() - time_start
       time_start = time.perf_counter()
-
+      self.model_metadata.stats.data_loading_time = time_start - mt
+    # self.next_x = self.data_loader.get_batch(train=True).realize() # TODO if loading is slow, do this in parallel
     logits, loss = self.run_with_loss(x)
     if capture_stats:
       self.model_metadata.stats.forward_pass_time = time.perf_counter() - time_start
@@ -125,9 +126,9 @@ class Model:
     self.optim.zero_grad()
     loss.backward()
     self.optim.step()
+    self.model_metadata.stats.train_loss = loss.numpy().item()  # Synchronizes GPU
     if capture_stats:
       et = time.perf_counter()
-      self.model_metadata.stats.train_loss = loss.numpy().item()
       self.model_metadata.stats.backward_pass_time = et - time_start
       self.model_metadata.stats.backward_giga_ops = GlobalCounters.global_ops / 1e9 - self.model_metadata.stats.forward_giga_ops
       self.model_metadata.stats.train_time = et - mt
@@ -137,7 +138,6 @@ class Model:
       self.stats_dump += ','.join(f'{value:.3f}' if isinstance(value, float) else str(value)
                                   for value in vars(self.model_metadata.stats).values()) + '\n'
     # self.evaluate(x[0], logits[0])
-    return loss
 
   def train(self):
     # self.one_train_pass()
@@ -145,10 +145,10 @@ class Model:
     end = self.model_metadata.stats.iter + 10000
     self.model_metadata.stats.batch_size = self.data_loader.batch_size
     for self.model_metadata.stats.iter in range(self.model_metadata.stats.iter, end):
-      loss = self.one_train_pass(capture_stats=self.model_metadata.stats.iter % 5 == 0)
+      self.one_train_pass(capture_stats=self.model_metadata.stats.iter % 5 == 0)
       if self.model_metadata.stats.iter % 100 == 0:
         self.validate()
-        self.save(loss.numpy().item())
+        self.save()
 
   def evaluate(self, x, y):
     next = y.squeeze(0).argmax(-1).numpy().astype(int).tolist()
@@ -166,6 +166,7 @@ class Model:
     logits, loss = self.run_with_loss(x)
     accuracy = (logits[:, :-1:].argmax(-1) == x[:, 1::]).mean()
     print(f'validation: accuracy: {accuracy.numpy()}, loss: {loss.numpy()}')
+    self.evaluate(x[0], logits[0])
     self.model_metadata.stats.valid_loss = loss.numpy().item()
 
   def __call__(self, str, debug=False):
