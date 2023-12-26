@@ -1,8 +1,10 @@
 # %%
 # imports
+import torch
+from tinygrad.helpers import DType, Timing, colored, fetch, getenv
 from my_lm import Transformer
 from data_loader import DataLoader
-from tinygrad.tensor import Tensor
+from tinygrad import Device, Tensor, dtypes, nn, mlops
 from tinygrad.helpers import Timing
 import numpy as np
 from tinygrad.helpers import dtypes
@@ -11,6 +13,200 @@ from tinygrad.nn.optim import SGD
 from extra.datasets import fetch_mnist
 from sentencepiece import SentencePieceProcessor
 
+
+# %%
+# bfloat
+from tinygrad.tensor import Tensor
+url = 'https://huggingface.co/mistralai/Mistral-7B-v0.1/resolve/main/pytorch_model-00001-of-00002.bin'
+filename = "weights/" + "mistral-7b-v01" + '-' + url.split("/")[-1]
+# b = Tensor([[1.0, 2.0, 3.0], [1.0, 2.9, 3.0]], dtype=dtypes.float16).realize()
+# print(b)
+# b = b.bitcast(dtypes.uint16).realize()
+# print(b.numpy())
+# b = b.bitcast(dtypes.float16).realize()
+# print(b.numpy())
+
+weights = nn.state.torch_load(str(fetch(url, filename)))
+
+a: Tensor = weights['model.embed_tokens.weight']
+print(a)
+a = a.bitcast(dtypes.uint16).realize().to('CPU').realize()
+a = a.cast(dtypes.uint32).mul(1 << 16).realize().contiguous().bitcast(dtypes.float32).cast(dtype=dtypes.float16).realize()
+# a = a.to('CPU').cast(dtype=dtypes.float16).realize()
+# .cast(dtypes.uint32).mul(1 << 16).realize()  # contiguous().bitcast(dtypes.float32).cast(dtype)
+# a = a.cast(dtype=dtypes.float16).realize()
+# a = a.to('CPU').realize()
+print(a.numpy())
+print(weights)
+a = weights['model.layers.1.input_layernorm.weight']
+
+shape = a.shape
+a = a.to(Device.DEFAULT).realize()
+print(a)
+a = mlops.Cast.apply(a, dtype=dtypes.uint64, bitcast=True).realize()
+print(a)
+print(a.numpy())
+print((a.sum() > 1).realize().numpy())
+
+
+# %%
+
+# %%
+# load model from file on disk
+model = torch.load('weights/mistral-7b-v01-pytorch_model-00001-of-00002.bin')
+
+# %%
+# pytoch bitcast
+print(model['model.embed_tokens.weight'].type(torch.float16).numpy())
+
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
 
 # %%
 # rope

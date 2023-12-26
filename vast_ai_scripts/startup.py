@@ -3,32 +3,10 @@
 import os
 import subprocess
 
-if os.path.basename(os.getcwd()) != "gt":
-  os.chdir("gt")
-
-# install tinygrad
-# if file not exist, clone tinygrad
-if not os.path.isfile("tinygrad/setup.py"):
-  subprocess.run(["git", "clone", "-b", "dev", "https://github.com/vish-pr/tinygrad.git"])
-os.chdir("tinygrad")
-subprocess.run(["git", "pull"])
-subprocess.run(["python3", "-m", "pip", "install", "-e", "."])
-os.chdir("..")
-
-# check is args CUDA is set
-if os.getenv("CUDA") == "1":
-  subprocess.run(["pip", "install", "pycuda"])
-
-try:
-  import sentencepiece
-except ImportError:
-  # used in tiny_stories tokenizer
-  subprocess.run(["pip", "install", "sentencepiece"])
-  subprocess.run(["pip", "install", "pytest"])
+subprocess.run(["pip", "install", "pytest"])
   # in tinygrad GRAPH=1 needs it.
-  subprocess.run(["pip", "install", "pydot"])
-  subprocess.run(["sudo", "apt", "install", "graphviz"])
-  subprocess.run(["sudo", "apt", "install", "neovim"])
+# subprocess.run(["pip", "install", "pydot"])
+# subprocess.run(["sudo", "apt", "install", "graphviz"])
 
 # download tiny_stories
 if not os.path.isfile("tiny_stories/data/TinyStoriesV2-GPT4-valid.txt"):

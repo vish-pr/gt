@@ -1,0 +1,35 @@
+{
+  "model_args": {
+    "dim": 64,
+    "n_layers": 5,
+    "n_heads": 8,
+    "n_kv_heads": 4,
+    "vocab_size": 512,
+    "multiple_of": 4,
+    "norm_eps": 1e-05,
+    "max_seq_len": 512,
+    "dropout": 0.05
+  },
+  "stats": {
+    "iter": 0,
+    "train_time": 35.71608921900042,
+    "data_loading_time": 0.00025722599821165204,
+    "forward_pass_time": 14.408572118001757,
+    "backward_pass_time": 21.30725628900109,
+    "forward_giga_ops": 9.583971627,
+    "backward_giga_ops": 19.890659285999998,
+    "TFLOPS": 0.0008252479920819534,
+    "number_of_allocs": 0,
+    "max_mem_used": 2.955766576,
+    "batch_size": 2,
+    "train_loss": 12.940533638000488,
+    "valid_loss": 12.840286254882812
+  },
+  "file_paths": {
+    "model_path": "tiny_stories/weights/my_stories_dim64_layer5_ckpt0.model",
+    "stats_path": "tiny_stories/weights/my_stories_dim64_layer5_ckpt0_training_dump.csv",
+    "tokenizer_path": "tiny_stories/weights/tok512.model",
+    "train_path": "tiny_stories/data/TinyStoriesV2-GPT4-train.txt",
+    "valid_path": "tiny_stories/data/TinyStoriesV2-GPT4-valid.txt"
+  }
+}

@@ -15,7 +15,7 @@ class Opt(Optimizer):
     for k, v in get_state_dict(model).items():
       if v.requires_grad == False:
         continue
-      # print(f'Optimizing {k}')
+      # print(f'Optimizing {k}, {v.shape}')
       params.append(v)
       count += v.numel()
     print(f'Optimizing params {len(params)} with {count} floating numbers')
@@ -23,7 +23,7 @@ class Opt(Optimizer):
 
   def step(self) -> None:
     for i, t in enumerate(self.params):
-      assert t.grad is not None
+      assert t.grad is not None, f'Param {i} {t.shape} does not have grad'
       g = t.grad.realize()
       t.assign(t.detach() - g * self.lr)
     self.realize()

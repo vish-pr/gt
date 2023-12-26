@@ -6,7 +6,8 @@ from typing import Tuple
 from tinygrad.tensor import Tensor
 
 
-def precompute_freqs_cis(head_dim: int, max_seq_len: int, theta: float = 10000.0) -> Tuple[Tensor, Tensor]:
+def precompute_freqs_cis(head_dim: int, max_seq_len: int) -> Tuple[Tensor, Tensor]:
+  theta: float = 10000.0
   # 1.0 / theta^((0, 2, 4, 6, ...)/dim)
   assert head_dim % 2 == 0, "dim must be even else change below line to freqs = 1.0 / (theta ** (Tensor.arange(0, dim, 2)[:(dim // 2)] / dim))"
   freqs = 1.0 / (theta ** (Tensor.arange(0, head_dim, 2) / head_dim))
@@ -25,15 +26,19 @@ def complex_mult(A: Tensor, c, d):
   return ro.cat(co, dim=-1)
 
 
+def apply_rotary_emb_single_vector(vector: Tensor, freqs_cos, freqs_sin) -> Tensor:
+  assert freqs_cos.shape[1] >= vector.shape[1] and freqs_sin.shape[1] >= vector.shape[
+    1], f"freqs_cis shape mismatch {freqs_cos.shape} vector:{vector.shape}"
+  freqs_cos, freqs_sin = freqs_cos[:, :vector.shape[1], :, :], freqs_sin[:, :vector.shape[1], :, :]
+  assert vector.shape[-1] % 2 == 0, f"head_dim must be even, vector:{vector.shape}"
+  vector = vector.reshape(*vector.shape[0:-1], -1, 2)  # divides head_dim into 2 parts like [[0, 1], [2, 3], ...]
+  vector = complex_mult(vector, freqs_cos, freqs_sin)
+  return vector.flatten(3)  # merge divided 2 parts of head_dim
+
 # commentry: If we change which values of last dim to use for a pair (alternate vs first-half) will same pretrained model work?
-# Maybe yes as we are mixing token differently which should result in different cosine similarities?
-def apply_rotary_emb(xq, xk, freqs_cos, freqs_sin) -> Tuple[Tensor, Tensor]:
-  assert freqs_cos.shape[1] >= xq.shape[1] and freqs_sin.shape[1] >= xk.shape[
-    1], f"freqs_cis shape mismatch {freqs_cos.shape} xq:{xq.shape} xk:{xk.shape}"
-  freqs_cos, freqs_sin = freqs_cos[:, :xq.shape[1], :, :], freqs_sin[:, :xq.shape[1], :, :]
-  assert xq.shape[-1] % 2 == 0 and xk.shape[-1] % 2 == 0, f"head_dim must be even, xq:{xq.shape} xk:{xk.shape}"
-  xq = xq.reshape(*xq.shape[0:-1], -1, 2)  # divides head_dim into 2 parts like [[0, 1], [2, 3], ...]
-  xk = xk.reshape(*xk.shape[0:-1], -1, 2)
-  xq_out = complex_mult(xq, freqs_cos, freqs_sin)
-  xk_out = complex_mult(xk, freqs_cos, freqs_sin)
-  return xq_out.flatten(3), xk_out.flatten(3)  # merge divided 2 parts of head_dim
+# Maybe no as we are mixing token differently which should result in different cosine similarities?
+
+
+def apply_rotary_emb(vectors: Tuple[Tensor, ...], freqs_cos, freqs_sin) -> Tuple[Tensor, ...]:
+  # return tuple of vector by applying rotary embedding to each vector in vectors
+  return tuple(apply_rotary_emb_single_vector(vector, freqs_cos, freqs_sin) for vector in vectors)

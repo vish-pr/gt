@@ -13,16 +13,17 @@ from tinygrad.tensor import Tensor
 class DataLoader:
   BYTES_TO_READ = 1024 * 1024 * 100  # 100 MB
 
-  def __init__(self, train_path: str, valid_path: str, batch_size: int, tokenizer: SentencePieceProcessor, cpu=False):
+  def __init__(self, train_path: str, valid_path: str, batch_size: int, tokenizer: SentencePieceProcessor, max_seq_len: int, cpu=False):
     self.tokenizer = tokenizer
-    self.tokenizer_name = '_' + str(tokenizer.Decode(42))
-    # print('Tokenizer name', self.tokenizer_name)
+    self.tokenizer_name = '_' + str(tokenizer.Decode(44))
+    print('Tokenizer name', self.tokenizer_name, 'len', self.tokenizer.vocab_size())
+
     self.preprocess(valid_path)
     self.preprocess(train_path)
     self.valid_data = self.get_data(valid_path)
     self.train_data = self.get_data(train_path)
     self.batch_size = batch_size
-    self.max_tokens = 1050
+    self.max_tokens = max_seq_len
     if cpu:
       self.array = np.empty((self.batch_size, self.max_tokens), dtype=np.int32)
     else:
@@ -49,7 +50,7 @@ class DataLoader:
           text = buffer[index: found_index]
           chunk.append(text.strip())
           index = found_index + len(string)
-        chunk = self.tokenizer.Encode(chunk, add_eos=True)
+        chunk = self.tokenizer.Encode(chunk, add_bos=True, add_eos=True)
         # samples.extend(self.tokenizer.Encode(samples_str))
         buffer = buffer[index:]
         index = 0
@@ -76,9 +77,9 @@ class DataLoader:
     data = self.train_data if train else self.valid_data
     batch = random.choices(data, k=self.batch_size)
     max_length = max(len(row) for row in batch)
-    max_length = max(max_length, 1050)
-    if max_length > 1050:
+    max_length = max(max_length, self.max_tokens)
+    if max_length > self.max_tokens:
       return self.get_batch(train)
     for index, row in enumerate(batch):
-      self.array[index, :] = np.pad(row, (0, max_length - len(row)), constant_values=self.tokenizer.eos_id())
+      self.array[index, :] = np.pad(row, (0, max_length - len(row)), constant_values=self.tokenizer.pad_id())
     return Tensor(self.array, dtype=dtypes.int32, requires_grad=False)
