@@ -18,8 +18,8 @@ class RMSNorm:
     self.weight = Tensor.ones(dim)
 
   def __call__(self, x: Tensor):
-    x = x.float()   # float because half will become inf
-    return ((x * (x.pow(2).mean(-1, keepdim=True) + self.eps).rsqrt()) * self.weight).half().realize()
+    # float because half will become inf
+    return ((x * (x.float().pow(2).mean(-1, keepdim=True) + self.eps).rsqrt()) * self.weight).half()
 
 
 class FeedForward:

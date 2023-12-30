@@ -61,22 +61,33 @@ class TestMistral(unittest.TestCase):
     # print(pytorch_input[0].tolist())
 
     encodeds_tiny = Tensor([tokenizer.encode("Lord ram is the king of ayodhya.")])
-    print(encodeds_tiny)
+    # encodeds_tiny = Tensor([tokenizer.encode("Year is 2030 and machines are concious now.")])
     model = config["model"]
     # Transformer(dim=config["hidden_size"], hidden_dim=config["intermediate_size"], n_heads=config["num_attention_heads"], n_kv_heads=config["num_key_value_heads"],
     #                     n_layers=config["num_hidden_layers"], vocab_size=config["vocab_size"], norm_eps=config["rms_norm_eps"], max_seq_len=config["rope_length"])
     model = download_model(model, config)
     # assert model is in cuda
+    start_pos = 0
+    tok = encodeds_tiny
     for i in range(5):
-      tok = model(encodeds_tiny).realize()
+      nump = encodeds_tiny.numpy()
+      print(tokenizer.decode(nump[0]))
+      # inp = encodeds_tiny[:, start_pos:].contiguous().realize() # this is very slow, compared to using tok
+      # inp = Tensor(nump[:, start_pos:])
+      tok = model(encodeds_tiny, start_pos)[:, -1:].realize()
+      # tok = model(inp, start_pos)[:, -1:].realize()
+      start_pos = encodeds_tiny.shape[1] - 1
       print('tinygrad warming up', tok.numpy())
     with Timing("tinygrad "):
         # print('enco', encodeds_tiny.numpy())
-      for i in range(15):
-        print(tokenizer.decode(encodeds_tiny.numpy()[0]))
-        tok = model(encodeds_tiny).realize()[:, -1:]
-        print(tok.shape)
-        encodeds_tiny = encodeds_tiny.cat(tok, dim=-1)
+      for i in range(100):  # 100 tokens tinygrad 6765.80 ms, 500 in 35007.69 ms
+        # nump = encodeds_tiny.numpy()
+        # print(tokenizer.decode(nump[0]))
+        # inp = encodeds_tiny[:, start_pos:].contiguous().realize()  # this is very slow, compared to using tok
+        # inp = Tensor(nump[:, start_pos:])
+        tok = model(encodeds_tiny, start_pos)[:, -1:].realize()
+        encodeds_tiny = encodeds_tiny.cat(tok, dim=-1).realize()
+        start_pos = encodeds_tiny.shape[1] - 1
     print(encodeds_tiny.numpy())
     print(tokenizer.decode(encodeds_tiny.numpy()[0]))
 

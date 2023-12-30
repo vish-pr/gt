@@ -32,8 +32,8 @@ def download_model(model, config):
     with Timing("creating cache: "):
       for url in config["urls"]:
         filename = "weights/" + config["name"] + '-' + url.split("/")[-1]
-        weights = convert_from_huggingface(fix_bf16(nn.state.torch_load(str(fetch(url, filename)))), config["num_hidden_layers"],
-                                           config["num_attention_heads"], config["num_key_value_heads"])
+        weights = convert_from_huggingface(fix_bf16(nn.state.torch_load(str(fetch(url, filename)))), len(
+          model.layers), model.layers[0].attention.n_heads, model.layers[0].attention.n_kv_heads)
         # TODO: Verify bf16 to float16 conversion is not overflows or underflows, by writing test to diff max and min from this and huggingface
         nn.state.load_state_dict(model, weights, strict=False)
       output_file = "weights/" + config["name"]

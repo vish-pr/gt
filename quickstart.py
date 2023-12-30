@@ -15,6 +15,18 @@ from sentencepiece import SentencePieceProcessor
 
 
 # %%
+# attention mask
+attn_mask = Tensor.zeros(3, 13, requires_grad=False).triu(1).cast(dtypes.bool)
+mask = Tensor.full((1, 1, 3, 13), float("-inf")).triu(11).realize()
+print(attn_mask.numpy())
+b = attn_mask[:,:0]
+c = Tensor([[True], [False], [True]])
+d = b.cat(c, dim=1)
+print(d.shape, d.numpy())
+print(mask.numpy())
+
+
+# %%
 # bfloat
 from tinygrad.tensor import Tensor
 url = 'https://huggingface.co/mistralai/Mistral-7B-v0.1/resolve/main/pytorch_model-00001-of-00002.bin'
@@ -59,156 +71,7 @@ model = torch.load('weights/mistral-7b-v01-pytorch_model-00001-of-00002.bin')
 # pytoch bitcast
 print(model['model.embed_tokens.weight'].type(torch.float16).numpy())
 
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
+ %%
 # rope
 dim = 10
 theta = 10000
