@@ -8,6 +8,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from hub import config_mistral as config
+from hub import config_instruct
 from hub import download_model, download_tokenizer
 from llama import Transformer
 from tinygrad import Device, nn
@@ -36,6 +37,11 @@ class TestMistral(unittest.TestCase):
   #   a = a.mul(1 << 16).realize().contiguous().bitcast(dtypes.float32).cast(dtype=dtypes.float16).realize()
   #   print(a.numpy())
 
+  def test_mistral_instruct(self):
+    tokenizer = download_tokenizer(config_instruct)
+    model = download_model(config_instruct)
+
+
   def test_mistral_signature(self):
     # device = "cuda"  # the device to load the model onto
     tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.1")
@@ -62,7 +68,6 @@ class TestMistral(unittest.TestCase):
 
     encodeds_tiny = Tensor([tokenizer.encode("Lord ram is the king of ayodhya.")])
     # encodeds_tiny = Tensor([tokenizer.encode("Year is 2030 and machines are concious now.")])
-    model = config["model"]
     # Transformer(dim=config["hidden_size"], hidden_dim=config["intermediate_size"], n_heads=config["num_attention_heads"], n_kv_heads=config["num_key_value_heads"],
     #                     n_layers=config["num_hidden_layers"], vocab_size=config["vocab_size"], norm_eps=config["rms_norm_eps"], max_seq_len=config["rope_length"])
     model = download_model(model, config)

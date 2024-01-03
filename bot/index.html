@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Chat</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      height: 100vh;
+      background-color: #2e2e2e;
+      /* Dark background color */
+      color: #fff;
+      /* Light text color */
+    }
+
+    #history-container,
+    #chat-container {
+      border: 1px solid #555;
+      /* Dark border color */
+      padding: 20px;
+      border-radius: 5px;
+      width: 80%;
+      margin: auto;
+      background-color: #333;
+      /* Dark container background color */
+      overflow-y: auto;
+    }
+
+    #history-container {
+      max-height: 100px;
+      /* no horizontal scroll bar  only vertical scroll bar */
+      text-wrap: wrap;
+    }
+
+    #chat-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #messages {
+      list-style-type: none;
+      padding: 0;
+      margin: 0;
+      overflow-y: auto;
+      max-height: 200px;
+      flex-grow: 1;
+    }
+
+    #sidebar {
+      width: 10%;
+      background-color: #333;
+      padding: 10px;
+      box-sizing: border-box;
+    }
+
+    input {
+      width: calc(100% - 10px);
+      padding: 10px;
+      box-sizing: border-box;
+      margin-top: 10px;
+      background-color: #444;
+      /* Dark input background color */
+      color: #fff;
+      /* Light text color */
+      border: 1px solid #555;
+      /* Dark border color */
+      border-radius: 3px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="history-container">
+    <p id="history"></p>
+  </div>
+
+  <div id="chat-container">
+    <ul id="messages"></ul>
+    <input id="message_input" autocomplete="off" onkeydown="handleKeyPress(event)" />
+  </div>
+  <div id="sidebar">
+    <div id="settings">
+      <label for="ipAddress">IP Address:</label>
+      <input type="text" id="ipAddress" placeholder="Enter IP Address" />
+      <label for="port">Port:</label>
+      <input type="text" id="port" placeholder="Enter Port" />
+      <button onclick="updateWebSocket()">Update WebSocket</button>
+    </div>
+    <!-- Add additional settings as needed -->
+  </div>
+
+  <script>
+    var socket;
+
+    document.addEventListener('DOMContentLoaded', function () {
+      // Get values from local storage or set default values
+      var savedIPAddress = localStorage.getItem('ipAddress') || 'localhost';
+      var savedPort = localStorage.getItem('port') || '8080';
+
+      // Set input values
+      document.getElementById('ipAddress').value = savedIPAddress;
+      document.getElementById('port').value = savedPort;
+
+      // Update WebSocket connection
+      updateWebSocket();
+    });
+
+
+    function updateWebSocket() {
+      var ipAddress = document.getElementById('ipAddress').value;
+      var port = document.getElementById('port').value;
+      // Store values in local storage
+      localStorage.setItem('ipAddress', ipAddress);
+      localStorage.setItem('port', port);
+      var wsURL = 'ws://' + ipAddress + ':' + port + '/';
+
+      if (socket) {
+        socket.close();
+      }
+
+      socket = new WebSocket(wsURL);
+
+      socket.onopen = function (event) {
+        // Set focus on the input field when the WebSocket connection is established
+        document.getElementById('message_input').focus();
+      };
+
+      socket.onopen = function (event) {
+        // Set focus on the input field when the WebSocket connection is established
+        console.log('connected')
+        document.getElementById('message_input').focus();
+      };
+
+      socket.onmessage = function (event) {
+        console.log('message received', event.data)
+        var historyContainer = document.getElementById('history');
+        historyContainer.innerHTML += event.data;
+        console.log(historyContainer.innerHTML)
+
+        historyContainer.scrollTop = historyContainer.scrollHeight; // Scroll to the bottom
+      };
+    }
+
+    function sendMessage() {
+      var messageInput = document.getElementById('message_input');
+      var message = messageInput.value;
+      console.log('sending message ' + message)
+      if (message.trim() !== "") {
+        socket.send(message);
+        messageInput.value = '';
+      }
+    }
+
+    function handleKeyPress(event) {
+      if (event.key === "Enter") {
+        event.preventDefault(); // Prevent the default behavior of the Enter key
+        sendMessage();
+      }
+    }
+  </script>
+
+</body>
+
+</html>

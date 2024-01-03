@@ -16,7 +16,8 @@ def download_tokenizer(config):
   return tokenizer
 
 
-def download_model(model, config):
+def download_model(config):
+  model = config["model"]
   output_file = "weights/" + config["name"]
   if os.path.isfile(output_file):
     with Timing("loading float16 cache:"):
@@ -36,11 +37,9 @@ def download_model(model, config):
           model.layers), model.layers[0].attention.n_heads, model.layers[0].attention.n_kv_heads)
         # TODO: Verify bf16 to float16 conversion is not overflows or underflows, by writing test to diff max and min from this and huggingface
         nn.state.load_state_dict(model, weights, strict=False)
+        os.remove(filename)  # delete first due to low disk space
       output_file = "weights/" + config["name"]
       nn.state.safe_save(nn.state.get_state_dict(model), output_file)
-      for url in config["urls"]:
-        filename = "weights/" + config["name"] + '-' + url.split("/")[-1]
-        os.remove(filename)
   return model
 
 
@@ -118,26 +117,34 @@ config_mistral = {
   "tokenizer_url": "https://huggingface.co/mistralai/Mistral-7B-v0.1/resolve/main/tokenizer.model",
 }
 
-config_istruct = {
-  "name": "mistral-7b-instruct-v02",
-  "attention_dropout": 0.0,
-  "bos_token_id": 1,
-  "eos_token_id": 2,
-  "hidden_act": "silu",
-  "hidden_size": 4096,
-  "initializer_range": 0.02,
-  "intermediate_size": 14336,
-  "max_position_embeddings": 32768,
-  # "model_type": "mistral",
-  "num_attention_heads": 32,
-  "num_hidden_layers": 32,
-  "num_key_value_heads": 8,
-  "rms_norm_eps": 1e-05,
-  "rope_theta": 1000000.0,
-  "torch_dtype": "bfloat16",
-  "transformers_version": "4.36.0",
-  "use_cache": True,
-  "vocab_size": 32000,
+config_instruct = {
+  "name": "mistralai/Mistral-7B-Instruct-v0.2",
+  "model": Transformer(dim=4096,
+                       hidden_dim=14336,
+                       n_heads=32,
+                       n_kv_heads=8,
+                       n_layers=32,
+                       vocab_size=32_000,
+                       norm_eps=1e-05,
+                       max_seq_len=128_000,
+                       rope_theta=1000_000.0),
+  # "attention_dropout": 0.0,
+  # "bos_token_id": 1,
+  # "eos_token_id": 2,
+  # "hidden_act": "silu",
+  # "initializer_range": 0.02,
+  # "intermediate_size": 14336,
+  # "max_position_embeddings": 32768,
+  # # "model_type": "mistral",
+  # "num_attention_heads": 32,
+  # "num_hidden_layers": 32,
+  # "num_key_value_heads": 8,
+  # "rms_norm_eps": 1e-05,
+  # "rope_theta": 1000_000.0,
+  # "torch_dtype": "bfloat16",
+  # "transformers_version": "4.36.0",
+  # "use_cache": True,
+  # "vocab_size": 32000,
   "urls": ['https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2/resolve/main/pytorch_model-00001-of-00003.bin',
            'https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2/resolve/main/pytorch_model-00002-of-00003.bin',
            'https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2/resolve/main/pytorch_model-00003-of-00003.bin'],

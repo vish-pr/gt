@@ -93,14 +93,62 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Encoder.md",
+                "file": "Transformer.md",
+                "mode": "source",
+                "source": false
+              }
+            }
+          },
+          {
+            "id": "951622534e1c70bd",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Transformer Paper.md",
+                "mode": "source",
+                "source": false
+              }
+            }
+          },
+          {
+            "id": "6127c7384c314f9c",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Transformer Paper.md",
+                "mode": "source",
+                "source": false
+              }
+            }
+          },
+          {
+            "id": "82aee8890d4d73fb",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "LLM capabilities critique.md",
+                "mode": "source",
+                "source": false
+              }
+            }
+          },
+          {
+            "id": "b59b06428d8fd63a",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Forward Forward.md",
                 "mode": "source",
                 "source": false
               }
             }
           }
         ],
-        "currentTab": 7
+        "currentTab": 11
       }
     ],
     "direction": "vertical"
@@ -166,7 +214,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "Encoder.md",
+                "file": "Forward Forward.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -183,7 +231,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "Encoder.md",
+                "file": "Forward Forward.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -206,7 +254,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "Encoder.md"
+                "file": "Forward Forward.md"
               }
             }
           }
@@ -227,14 +275,18 @@
       "command-palette:Open command palette": false
     }
   },
-  "active": "50b20d74e96719ab",
+  "active": "b59b06428d8fd63a",
   "lastOpenFiles": [
+    "LLM capabilities critique.md",
+    "Forward Forward.md",
+    "Transformer Paper.md",
+    "LLM datasets.md",
+    "Transformer.md",
+    "Encoder.md",
     "Language model.md",
     "Online Resources.md",
     "Short circuit transformer.md",
     "Web Scraping.md",
-    "Transformer.md",
-    "Encoder.md",
     "KNN.md",
     "content creation.md",
     "Stanford cheat-sheet.md",

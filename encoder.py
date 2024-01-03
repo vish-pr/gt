@@ -18,10 +18,8 @@
 
 from typing import Any, Generator, List
 
+from layers import Attention, RMSNorm
 from tinygrad.tensor import Tensor
-from llama import FeedForward
-
-from layer import RMSNorm
 
 
 class UnicodeEncoder:

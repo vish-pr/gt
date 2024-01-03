@@ -1,5 +1,5 @@
+
 from tinygrad.tensor import Tensor
-from tinygrad.nn import Linear
 
 
 class LayerNorm:
@@ -20,13 +20,3 @@ class RMSNorm:
   def __call__(self, x: Tensor):
     # float because half will become inf
     return ((x * (x.float().pow(2).mean(-1, keepdim=True) + self.eps).rsqrt()) * self.weight).half()
-
-
-class FeedForward:
-  def __init__(self, dim, hidden_dim):
-    self.w1 = Linear(dim, hidden_dim, bias=False)
-    self.w2 = Linear(hidden_dim, dim, bias=False)
-    self.w3 = Linear(dim, hidden_dim, bias=False)
-
-  def __call__(self, x: Tensor) -> Tensor:
-    return self.w2(self.w1(x).silu() * self.w3(x))

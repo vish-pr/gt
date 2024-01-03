@@ -41,6 +41,6 @@ TODO
 * for this encoder + converter layer should be same.
 * Have different converter layer for each target model.
 * AIM: this converter layer should not add infomation
-	* This is unclear what reforms vector and what adds information. TODO maths
+	* This is unclear what reforms vector and what adds information. TODO maths (maybe a linear transformation does not add information)
 
 

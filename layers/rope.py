@@ -2,7 +2,7 @@
 # https://arxiv.org/pdf/2104.09864v4.pdf
 # implemetation matching https://github.com/facebookresearch/llama/blob/main/llama/model.py
 from typing import Tuple
-from tinygrad.helpers import dtypes
+from tinygrad.dtype import dtypes
 
 from tinygrad.tensor import Tensor
 

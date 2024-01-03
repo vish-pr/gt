@@ -3,16 +3,14 @@
 # https://github.com/tinygrad/tinygrad/blob/master/examples/llama.py
 
 import math
-import stat
 from typing import Optional, Tuple
 
-from tinygrad.helpers import all_int, dtypes
-
-import rope
-
+import layers.rope as rope
+from layers.layer import RMSNorm
+from tinygrad.dtype import dtypes
+from tinygrad.helpers import all_int
 from tinygrad.nn import Embedding, Linear
 from tinygrad.tensor import Tensor
-from layer import RMSNorm
 
 
 def repeat_kv(x: Tensor, n_rep: int) -> Tensor:
