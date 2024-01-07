@@ -3,10 +3,9 @@ from typing import Dict
 
 from transformers import AutoTokenizer
 
+from layers import Transformer
 from tinygrad import Device, Tensor, dtypes, nn
 from tinygrad.helpers import Timing, fetch
-
-from llama import Transformer
 
 
 def download_tokenizer(config):
@@ -17,7 +16,7 @@ def download_tokenizer(config):
 
 
 def download_model(config):
-  model = config["model"]
+  model = Transformer(**config["model_params"])
   output_file = "weights/" + config["name"]
   if os.path.isfile(output_file):
     with Timing("loading float16 cache:"):
@@ -44,6 +43,7 @@ def download_model(config):
 
 
 def fix_bf16(weights):
+  # convert bf16 to float16 for CUDA
   def fix(a):
     a = a.bitcast(dtypes.uint16).realize()
     a = a.to('CPU').realize()
@@ -85,33 +85,24 @@ def convert_from_huggingface(weights: Dict[str, Tensor], n_layers: int, n_heads:
 
 config_mistral = {
   "name": "mistralai/Mistral-7B-v0.1",
-  "model": Transformer(dim=4096,
-                       hidden_dim=14336,
-                       n_heads=32,
-                       n_kv_heads=8,
-                       n_layers=32,
-                       vocab_size=32_000,
-                       norm_eps=1e-05,
-                       max_seq_len=128_000),
+  "model_params": {'dim': 4096,
+                   'hidden_dim': 14336,
+                   'n_heads': 32,
+                   'n_kv_heads': 8,
+                   'n_layers': 32,
+                   'vocab_size': 32_000,
+                   'norm_eps': 1e-05,
+                   'max_seq_len': 128_000,
+                   'rope_theta': 10_000.0},
   # "bos_token_id": 1,
-  # "eos_token_id": 2,
+  "eos_token_id": 2,
   # "hidden_act": "silu",
   # "hidden_size": 4096,
   # # "initializer_range": 0.02,
-  # "intermediate_size": 14336,
   # "max_position_embeddings": 32768,
   # # "model_type": "mistral",
-  # "num_attention_heads": 32,
-  # "num_hidden_layers": 32,
-  # "num_key_value_heads": 8,
-  # "rms_norm_eps": 1e-05,
-  # "rope_theta": 10000.0,
   # # "sliding_window": 4096,
-  # "rope_theta": 10000.0,
-  # "rope_length": 128_000,
-  # "torch_dtype": "bfloat16",
   # "use_cache": True,
-  # "vocab_size": 32000,
   "urls": ['https://huggingface.co/mistralai/Mistral-7B-v0.1/resolve/main/pytorch_model-00001-of-00002.bin',
            'https://huggingface.co/mistralai/Mistral-7B-v0.1/resolve/main/pytorch_model-00002-of-00002.bin'],
   "tokenizer_url": "https://huggingface.co/mistralai/Mistral-7B-v0.1/resolve/main/tokenizer.model",
@@ -119,32 +110,22 @@ config_mistral = {
 
 config_instruct = {
   "name": "mistralai/Mistral-7B-Instruct-v0.2",
-  "model": Transformer(dim=4096,
-                       hidden_dim=14336,
-                       n_heads=32,
-                       n_kv_heads=8,
-                       n_layers=32,
-                       vocab_size=32_000,
-                       norm_eps=1e-05,
-                       max_seq_len=128_000,
-                       rope_theta=1000_000.0),
+  "model_params": {'dim': 4096,
+                   'hidden_dim': 14336,
+                   'n_heads': 32,
+                   'n_kv_heads': 8,
+                   'n_layers': 32,
+                   'vocab_size': 32_000,
+                   'norm_eps': 1e-05,
+                   'max_seq_len': 128_000,
+                   'rope_theta': 1000_000.0},
   # "attention_dropout": 0.0,
   # "bos_token_id": 1,
-  # "eos_token_id": 2,
+  "eos_token_id": 2,
   # "hidden_act": "silu",
   # "initializer_range": 0.02,
-  # "intermediate_size": 14336,
   # "max_position_embeddings": 32768,
-  # # "model_type": "mistral",
-  # "num_attention_heads": 32,
-  # "num_hidden_layers": 32,
-  # "num_key_value_heads": 8,
-  # "rms_norm_eps": 1e-05,
-  # "rope_theta": 1000_000.0,
-  # "torch_dtype": "bfloat16",
-  # "transformers_version": "4.36.0",
   # "use_cache": True,
-  # "vocab_size": 32000,
   "urls": ['https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2/resolve/main/pytorch_model-00001-of-00003.bin',
            'https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2/resolve/main/pytorch_model-00002-of-00003.bin',
            'https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2/resolve/main/pytorch_model-00003-of-00003.bin'],

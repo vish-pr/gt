@@ -10,10 +10,10 @@ from typing import Optional
 from sentencepiece import SentencePieceProcessor
 from tinygrad.nn import Embedding, state
 
-from data_loader import DataLoader
+from train.data_loader import DataLoader
 from llama import Transformer
 # from my_lm import Transformer
-from opt import Opt
+from train.opt import Opt
 from tinygrad.helpers import GlobalCounters
 from tinygrad.nn.state import (get_parameters, get_state_dict, load_state_dict,
                                safe_load, safe_save, torch_load)
@@ -60,6 +60,7 @@ class TensorStats:
   std: float
   min: float
   max: float
+
 
 @dataclass
 class FilePaths:

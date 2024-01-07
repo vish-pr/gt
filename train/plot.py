@@ -2,7 +2,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Dict, List
-from model import TensorStats
+from train.model import TensorStats
 
 file_name = 'tiny_stories/weights/my_stories_dim64_layer5_ckpt25_model_stats_dump.csv'
 

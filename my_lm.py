@@ -6,7 +6,7 @@ import math
 from typing import Optional, Tuple
 
 import layers.rope as rope
-from layers.layer import RMSNorm
+from layers.transformer import RMSNorm
 from tinygrad.dtype import dtypes
 from tinygrad.helpers import all_int
 from tinygrad.nn import Embedding, Linear

@@ -141,7 +141,7 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Forward Forward.md",
+                "file": "Transformer Paper.md",
                 "mode": "source",
                 "source": false
               }
@@ -214,7 +214,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "Forward Forward.md",
+                "file": "Transformer Paper.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -231,7 +231,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "Forward Forward.md",
+                "file": "Transformer Paper.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -254,7 +254,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "Forward Forward.md"
+                "file": "Transformer Paper.md"
               }
             }
           }
@@ -277,8 +277,8 @@
   },
   "active": "b59b06428d8fd63a",
   "lastOpenFiles": [
-    "LLM capabilities critique.md",
     "Forward Forward.md",
+    "LLM capabilities critique.md",
     "Transformer Paper.md",
     "LLM datasets.md",
     "Transformer.md",

@@ -7,3 +7,7 @@ https://arxiv.org/pdf/2306.17759.pdf
 
 ## Neural Network Field Theories: Non-Gaussianity, Actions, and Locality
 https://arxiv.org/pdf/2307.03223.pdf
+
+
+## Geoffrey Hinton
+his major contri https://www.youtube.com/watch?v=-eyhCTvrEtE

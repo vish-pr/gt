@@ -1,18 +1,43 @@
 # %%
 # imports
 import torch
-from tinygrad.helpers import DType, Timing, colored, fetch, getenv
+# from tinygrad.helpers import DType, Timing, colored, fetch, getenv
 from my_lm import Transformer
-from data_loader import DataLoader
+# from train.data_loader import DataLoader
 from tinygrad import Device, Tensor, dtypes, nn, mlops
 from tinygrad.helpers import Timing
 import numpy as np
-from tinygrad.helpers import dtypes
+# from tinygrad.helpers import dtypes
 from tinygrad.nn import Embedding, Linear
 from tinygrad.nn.optim import SGD
 from extra.datasets import fetch_mnist
 from sentencepiece import SentencePieceProcessor
 
+# %%
+# selector
+def argmax(x, keepdim=False):
+  axis = 1
+  print('max', x.shape, x.max(axis=axis, keepdim=keepdim).numpy())
+  m = x > (x.max(axis=axis, keepdim=True) *.8)
+  print('m', m.numpy(), (m* Tensor.arange(x.shape[axis] -1, -1, -1, requires_grad=False, device=x.device).reshape(x.shape[axis], *[1]*(x.ndim-axis-1))).numpy())
+  idx = m * Tensor.arange(x.shape[axis]-1,-1,-1, requires_grad=False, device=x.device).reshape(x.shape[axis], *[1]*(x.ndim-axis-1))
+  print('idx', idx.max(axis=axis, keepdim=keepdim).numpy())
+  return (x.shape[axis]-idx.max(axis=axis, keepdim=keepdim)-1).cast(dtypes.default_int)
+a = Tensor([[.2, 3, 8.8, 9, 7.99, 1.89, 8.9],[.2, 3.9, 4, .5, .9, 1.89, .8]]).softmax(-1)
+# topk algorithm
+mask = Tensor.ones_like(a)
+for i in range(3):
+  max = a.max(-1)
+  index = argmax(a, keepdim=True)
+  mask[index] = 0
+  print(index.numpy(), mask.numpy())
+max = a.max(-1)
+min = max * .9
+c = a[a > min]
+print(c.numpy())
+b = (a > min).where(a, Tensor(0))
+print(b.numpy())
+print(a.numpy(), max.numpy())
 
 # %%
 # attention mask
@@ -67,7 +92,7 @@ print((a.sum() > 1).realize().numpy())
 # load model from file on disk
 model = torch.load('weights/mistral-7b-v01-pytorch_model-00001-of-00002.bin')
 
-# %%
+# %%.
 # pytoch bitcast
 print(model['model.embed_tokens.weight'].type(torch.float16).numpy())
 

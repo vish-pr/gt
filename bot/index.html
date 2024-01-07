@@ -35,8 +35,8 @@
     }
 
     #history-container {
-      max-height: 100px;
-      /* no horizontal scroll bar  only vertical scroll bar */
+      max-height: 500px;
+      /* no horizontal scroll bar only vertical scroll bar */
       text-wrap: wrap;
     }
 
@@ -96,12 +96,10 @@
       <input type="text" id="port" placeholder="Enter Port" />
       <button onclick="updateWebSocket()">Update WebSocket</button>
     </div>
-    <!-- Add additional settings as needed -->
   </div>
 
   <script>
     var socket;
-
     document.addEventListener('DOMContentLoaded', function () {
       // Get values from local storage or set default values
       var savedIPAddress = localStorage.getItem('ipAddress') || 'localhost';

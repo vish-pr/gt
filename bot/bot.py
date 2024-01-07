@@ -1,29 +1,17 @@
-# * Observations passive inputs: all source code, searching web
-
-# process
-
-# output
-
 import os
 import sys
-
-from tinygrad.helpers import Timing
-
+import time
 sys.path.append(os.getcwd())   # fmt: off
 
-# wait for user input
-import asyncio
-from dataclasses import dataclass
-from typing import List
-
-import websockets
-
+from tinygrad.helpers import Timing
 from mistral import MistralModels
+import asyncio
+import websockets
 
 
 class Server:
   def __init__(self):
-    self.tree = ConverstationTree()
+    self.model = MistralModels()
     start_server = websockets.serve(self.handle_client, "0.0.0.0", 8080)
     asyncio.get_event_loop().run_until_complete(start_server)
     print("Listening")
@@ -34,13 +22,19 @@ class Server:
     async for message in websocket:
       await websocket.send(f"<br>Me: {message}")
       print('message', message)
-      output_multi_stream = self.tree.process(message)
+      output_multi_stream = self.model.process(message)
       await websocket.send(f"<br>Z: ")
+      tokens=0
+      st = None
       for output in output_multi_stream:
-        
-        with Timing("outter loop "):
-          print(f'output ::{output}::')
-          await websocket.send(output)
+        await websocket.send(output)
+        tokens += 1
+        if not st and tokens == 4:
+          tokens = 0
+          st = time.perf_counter_ns()
+      if st:
+        en = time.perf_counter_ns() - st
+        print(f'{en*1e-6 / tokens:6.2f} ms per token')
 
   async def on_connect(self, websocket, path):
     self.clients = websocket
@@ -48,35 +42,5 @@ class Server:
   async def on_disconnect(self, websocket, path):
     self.client = None
 
-
-@dataclass
-class Node:
-  parent: int
-  children: List[int]
-  text: str
-  input: bool  # else output
-
-
-class ConverstationTree:
-  # create a node for a tree struct
-
-  def __init__(self):
-    self.trees: List[Node] = []
-    self.model = MistralModels()
-    self.cur = -1
-
-  def add_node(self, text: str, input: bool):
-    # add a node to the tree
-    self.trees.append(Node(self.cur, [], text, input))
-    return len(self.trees) - 1
-
-  def process(self, inp):
-    self.cur = self.add_node(inp, True)
-    # outputs: List[str] = self.model.process(inp)
-    # branches = [self.add_node(output, False) for output in outputs]
-    output_stream = self.model.process(inp)
-    for output in output_stream:
-      self.cur = self.add_node(output, False)
-      yield output
 
 server = Server()
