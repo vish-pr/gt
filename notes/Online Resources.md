@@ -23,3 +23,17 @@ https://stanford.edu/~shervine/teaching/cs-230/
 ## Content Creation
 ### YouTube shorts
 https://www.youtube.com/watch?v=As7abwNhG7Y
+
+## https://github.com/mlabonne/llm-course
+
+# Evals
+Need a system for evals.
+## https://github.com/openai/evals
+## https://www.lakera.ai/blog/large-language-model-evaluation
+
+
+## coding evals
+* Codechef/codeforces/spoj
+* euler  for math code
+### https://huggingface.co/ise-uiuc/Magicoder-S-DS-6.7B
+### https://github.com/the-crypt-keeper/can-ai-code
