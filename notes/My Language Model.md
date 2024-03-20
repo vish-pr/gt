@@ -35,6 +35,9 @@ To solve this we should do decomposition like Fourier transform to find basis ve
 
 ## Lora layers
 ## Document embedding
+### Dataset
+https://arxiv.org/abs/2210.07316
+### Logic
 
 To get embedding of a text, add token/s which can see whole text, but text can not see tokens, pass them through model, collect these extra token and pass them to model again.
 This time all tokens can see extra tokens, but they can not see text. Now predicted text should be equal to actual text.

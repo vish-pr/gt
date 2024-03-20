@@ -1,0 +1,19 @@
+{
+  "id": "vassav/tinygrad",
+  "id_no": 49413574,
+  "title": "tinygrad",
+  "code_file": "tinygrad.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "keywords": [
+    "utility script"
+  ],
+  "dataset_sources": [],
+  "kernel_sources": [],
+  "competition_sources": [],
+  "model_sources": []
+}

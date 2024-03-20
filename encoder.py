@@ -17,15 +17,13 @@
 # Adding noise to output of encoding generated from random vector, can make LM more robust, and make nearest neighbour search more robust.
 
 from typing import Any, Generator, List
-
-from layers import Attention, RMSNorm
 from tinygrad.tensor import Tensor
 
 
 class UnicodeEncoder:
   def __init__(self) -> None:
     self.vocab_size = 0
-    embed_size = 8
+    embed_size = 4
     self.weight = Tensor.glorot_uniform(self.vocab_size, embed_size)
     self.id_to_idx = {}
 
@@ -46,8 +44,7 @@ class UnicodeEncoder:
 
   def encode(self, text: str) -> Generator[Tensor, None, None]:
     for char in text:
-      id = ord(char)
-      idx = self._get_or_create_idx(id)
+      idx = self._get_or_create_idx(ord(char))
       yield self.weight[idx]
 
 
@@ -58,7 +55,7 @@ class TransformerBlock:
   #   if sccess:  w
   # right try to predict left
 
-  def __init__(self, dim, multiple_of, n_heads, n_kv_heads, norm_eps, ffn_dim_multiplier=None):
+  def __init__(self, dim, n_heads, n_kv_heads, norm_eps):
     self.attention = Attention(dim, n_heads, n_kv_heads)
     self.attention_norm = RMSNorm(dim, norm_eps)
     self.ffn_norm = RMSNorm(dim, norm_eps)

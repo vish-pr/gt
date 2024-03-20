@@ -70,10 +70,3 @@ def apply_rotary_emb(xq, xk, freqs_cis) -> Tuple[Tensor, Tensor]:
   xq_out = complex_mult(xq, c, d)
   xk_out = complex_mult(xk, c, d)
   return xq_out.flatten(3), xk_out.flatten(3)
-
-
-def repeat_kv(x: Tensor, n_rep: int) -> Tensor:
-  bs, seqlen, n_kv_heads, head_dim = x.shape
-  if n_rep == 1:
-    return x
-  return x.reshape(bs, seqlen, n_kv_heads, 1, head_dim).expand(bs, seqlen, n_kv_heads, n_rep, head_dim).reshape(bs, seqlen, n_kv_heads * n_rep, head_dim)

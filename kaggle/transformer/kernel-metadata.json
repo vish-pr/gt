@@ -1,0 +1,17 @@
+{
+  "id": "vassav/transformer",
+  "title": "transformer",
+  "code_file": "../../layers/transformer.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": "true",
+  "enable_gpu": "false",
+  "enable_tpu": "false",
+  "enable_internet": "false",
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": [
+    "vassav/tinygrad"
+  ],
+  "model_sources": []
+}

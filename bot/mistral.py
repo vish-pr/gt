@@ -1,14 +1,13 @@
 
 import os
 import sys
-import time
 
 sys.path.append(os.getcwd())   # fmt: off
 
 import re
+import time
 from typing import List, Union
 
-import numpy as np
 from language_model import LanguageModel
 
 from hub import config_instruct, download_model, download_tokenizer
@@ -39,8 +38,10 @@ class MistralModels(LanguageModel):
 
 from typing import Generator, List, Union
 
+
 def mistral_test():
   model = MistralModels()
+  print('model loaded')
   st = time.perf_counter_ns()
   op_stream: Generator[str, None, None] = model.process('What is a prime number?')
   output = ''.join(op_stream)
@@ -71,4 +72,4 @@ def mistral_test():
   assert per_token < 210 and per_token > 150, f"per token {per_token:6.2f} ms"
   print(f"per token {per_token:6.2f} ms")
 
-# mistral_test()
+mistral_test()

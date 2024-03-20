@@ -1,19 +1,26 @@
-# code sources:
+
 # https://github.com/karpathy/llama2.c
 # https://github.com/tinygrad/tinygrad/blob/master/examples/llama.py
 
 import math
-from typing import Any, Callable, Union
+from typing import Callable, Union
 
-from attr import dataclass
-import numpy as np
-
-import layers.rope as rope
-from layers.norm import RMSNorm
 from tinygrad.jit import TinyJit
 from tinygrad.nn import Embedding, Linear
 from tinygrad.shape.symbolic import Variable
 from tinygrad.tensor import Tensor
+
+from layers import rope
+
+
+class RMSNorm:
+  def __init__(self, dim, eps=1e-6):
+    self.eps = eps
+    self.weight = Tensor.ones(dim)
+
+  def __call__(self, x: Tensor):
+    # float because half will become inf
+    return ((x * (x.float().pow(2).mean(-1, keepdim=True) + self.eps).rsqrt()) * self.weight).half()
 
 
 class FeedForward:
@@ -108,53 +115,19 @@ class TransformerBlock:
 selector: Callable[[Tensor], Tensor] = lambda x: x.argmax(-1, keepdim=True)
 
 
-class MaxLogitsSelector:
-  def __call__(self, logits: Tensor) -> Tensor:
-    return logits.argmax(-1, keepdim=True)
-
-
-class Explorer:
-  def __call__(self, logits: Tensor) -> Tensor:
-    prob = -logits.softmax(axis=-1)
-    # shape: bsz, vocab_size
-    cpu = prob.numpy()
-    # sort rows
-    # Sort each row and get the indices
-    sorted_indices = np.argsort(cpu, axis=-1)
-
-    # Use the indices to get the sorted matrix
-    sorted_matrix = np.take_along_axis(cpu, sorted_indices, axis=-1)
-    print(-sorted_matrix[0, :20])
-
-    return logits.argmax(-1, keepdim=True)
-
 class Transformer:
-
-  @dataclass
-  class Config:
-    dim: int
-    hidden_dim: int
-    n_heads: int
-    n_layers: int
-    norm_eps: float
-    vocab_size: int
-    n_kv_heads: int
-    rope_theta: float
-    max_seq_len: int
-
-  def __init__(self, config: Config, selector=selector):
-    self.layers = [TransformerBlock(config.dim, config.n_heads, n_kv_heads=config.n_kv_heads, norm_eps=config.norm_eps,
-                                    hidden_dim=config.hidden_dim) for _ in range(config.n_layers)]
-    self.norm = RMSNorm(config.dim, config.norm_eps)
-    print('vocab_size', config.vocab_size, 'dim', config.dim)
-    self.tok_embeddings = Embedding(config.vocab_size, config.dim)
-    self.output = Linear(config.dim, config.vocab_size, bias=False)  # weight of shape: vocab_size, dim
+  def __init__(self, dim: int, hidden_dim, n_heads, n_layers, norm_eps, vocab_size, max_seq_len, n_kv_heads=None, rope_theta=10000.0, selector=selector):
+    self.layers = [TransformerBlock(dim, n_heads, n_kv_heads=n_kv_heads, norm_eps=norm_eps, hidden_dim=hidden_dim) for _ in range(n_layers)]
+    self.norm = RMSNorm(dim, norm_eps)
+    print('vocab_size', vocab_size, 'dim', dim)
+    self.tok_embeddings = Embedding(vocab_size, dim)
+    self.output = Linear(dim, vocab_size, bias=False)  # weight of shape: vocab_size, dim
     # self.freqs_cos, self.freq_sin = rope.precompute_freqs_cis(dim // n_heads, max_seq_len * 2, rope_theta)
-    self.freqs_cis = rope.precompute_freqs_cis(config.dim // config.n_heads, config.max_seq_len, config.rope_theta)
+    self.freqs_cis = rope.precompute_freqs_cis(dim // n_heads, max_seq_len, rope_theta)
     self.norm_output = lambda x: self.output(self.norm(x))
     self.cache_history = None
     self.max_context = 5000
-    self.selector = Explorer()
+    self.selector = selector
     self.forward_jit = TinyJit[Tensor](self.forward)
 
   def forward(self, tokens: Tensor, start_pos: Union[Variable, int]) -> Tensor:
@@ -169,10 +142,10 @@ class Transformer:
     return logits.softmax(axis=-1).realize()
     # return (logits[:, -1, :] / (temperature + 1e-6)).softmax().flatten().realize()
 
-  def __call__(self, tokens: Tensor, start_pos: int, jit: bool = False) -> Tensor:
+  def __call__(self, tokens: Tensor, start_pos: int) -> Tensor:
     # start_pos = self.fix_cache(tokens) # this is slower than maitaing start_pos outside, by 5ms per token
     # tokens = tokens.shrink((None, (start_pos, tokens.shape[1]))).contiguous().realize()
     # TODO: better way to handle the first call v.s. the rest?
     return self.forward_jit(tokens, Variable("start_pos", 1, self.max_context).bind(
-      start_pos)) if tokens.shape[0:2] == (1, 1) and start_pos > 0 and jit else self.forward(tokens, start_pos)
+      start_pos)) if tokens.shape[0:2] == (1, 1) and start_pos > 0 else self.forward(tokens, start_pos)
     # op = logits[:, -1, :].argmax(-1).realize()

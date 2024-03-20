@@ -16,7 +16,7 @@ def download_tokenizer(config):
 
 
 def download_model(config):
-  model = Transformer(**config["model_params"])
+  model = Transformer(config["model_params"])
   output_file = "weights/" + config["name"]
   if os.path.isfile(output_file):
     with Timing("loading float16 cache:"):
@@ -36,23 +36,14 @@ def download_model(config):
           model.layers), model.layers[0].attention.n_heads, model.layers[0].attention.n_kv_heads)
         # TODO: Verify bf16 to float16 conversion is not overflows or underflows, by writing test to diff max and min from this and huggingface
         nn.state.load_state_dict(model, weights, strict=False)
-        os.remove(filename)  # delete first due to low disk space
+        Device[Device.DEFAULT].synchronize()  # so we can delete th source file
+        # os.remove(filename)  # delete first due to low disk space
       output_file = "weights/" + config["name"]
       nn.state.safe_save(nn.state.get_state_dict(model), output_file)
   return model
 
 
-def fix_bf16(weights):
-  # convert bf16 to float16 for CUDA
-  def fix(a):
-    a = a.bitcast(dtypes.uint16).realize()
-    a = a.to('CPU').realize()
-    a = a.cast(dtype=dtypes.uint32).realize()
-    a = a.mul(1 << 16).realize().contiguous().bitcast(dtypes.float32).cast(dtypes.float16)
-    a = a.to(Device.DEFAULT).realize()
-    return a
-  return {k: fix(v) if v.dtype == dtypes.bfloat16 else v for k, v in weights.items()}
-
+def fix_bf16(weights): return {k: v.to(Device.DEFAULT).cast(dtypes.float16) if v.dtype == dtypes.bfloat16 else v for k, v in weights.items()}
 
 def convert_from_huggingface(weights: Dict[str, Tensor], n_layers: int, n_heads: int, n_kv_heads: int):
   def permute(v: Tensor, n_heads: int):
@@ -110,15 +101,15 @@ config_mistral = {
 
 config_instruct = {
   "name": "mistralai/Mistral-7B-Instruct-v0.2",
-  "model_params": {'dim': 4096,
-                   'hidden_dim': 14336,
-                   'n_heads': 32,
-                   'n_kv_heads': 8,
-                   'n_layers': 32,
-                   'vocab_size': 32_000,
-                   'norm_eps': 1e-05,
-                   'max_seq_len': 128_000,
-                   'rope_theta': 1000_000.0},
+  "model_params": Transformer.Config(dim=4096,
+                                     hidden_dim=14336,
+                                     n_heads=32,
+                                     n_kv_heads=8,
+                                     n_layers=32,
+                                     vocab_size=32_000,
+                                     norm_eps=1e-05,
+                                     max_seq_len=128_000,
+                                     rope_theta=1000_000.0),
   # "attention_dropout": 0.0,
   # "bos_token_id": 1,
   "eos_token_id": 2,

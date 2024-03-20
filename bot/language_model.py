@@ -67,6 +67,7 @@ class LanguageModel:  # this is generic language model, and leaves individual mo
       op: int = int(x.item())
       self.conversation.add_node([op], Speaker.ASSISTANT)
       str_op = self.token_to_string(op)
+      print(str_op)
       if str_op:
         yield str_op
       else:
