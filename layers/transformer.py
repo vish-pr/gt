@@ -10,7 +10,7 @@ import numpy as np
 
 import layers.rope as rope
 from layers.norm import RMSNorm
-from tinygrad.jit import TinyJit
+from tinygrad import TinyJit
 from tinygrad.nn import Embedding, Linear
 from tinygrad.shape.symbolic import Variable
 from tinygrad.tensor import Tensor
@@ -151,28 +151,25 @@ class Transformer:
     self.output = Linear(config.dim, config.vocab_size, bias=False)  # weight of shape: vocab_size, dim
     # self.freqs_cos, self.freq_sin = rope.precompute_freqs_cis(dim // n_heads, max_seq_len * 2, rope_theta)
     self.freqs_cis = rope.precompute_freqs_cis(config.dim // config.n_heads, config.max_seq_len, config.rope_theta)
-    self.norm_output = lambda x: self.output(self.norm(x))
-    self.cache_history = None
     self.max_context = 5000
     self.selector = Explorer()
-    self.forward_jit = TinyJit[Tensor](self.forward)
 
-  def forward(self, tokens: Tensor, start_pos: Union[Variable, int]) -> Tensor:
-    _bsz, seqlen = tokens.shape
-    freqs_cis = self.freqs_cis.shrink((None, (start_pos, start_pos + seqlen), None, None, None))
+  @TinyJit
+  def predicting_one_token(self, tokens: Tensor, start_pos: int) -> Tensor:
+    return self.predicting_multiple_tokens(tokens, start_pos, 1)
+
+  def predicting_multiple_tokens(self, tokens: Tensor, start_pos: int, seq_len: int) -> Tensor:
+    freqs_cis = self.freqs_cis.shrink((None, (start_pos, start_pos + seq_len), None, None, None))
     h = self.tok_embeddings(tokens).realize()
     for layer in self.layers:
       h = layer(h, start_pos, freqs_cis).realize()
     logits = self.output(self.norm(h))
-    if self.selector:
-      return self.selector(logits[:, -1]).realize()
-    return logits.softmax(axis=-1).realize()
-    # return (logits[:, -1, :] / (temperature + 1e-6)).softmax().flatten().realize()
+    return self.selector(logits[:, -1]).realize()
 
-  def __call__(self, tokens: Tensor, start_pos: int, jit: bool = False) -> Tensor:
-    # start_pos = self.fix_cache(tokens) # this is slower than maitaing start_pos outside, by 5ms per token
-    # tokens = tokens.shrink((None, (start_pos, tokens.shape[1]))).contiguous().realize()
-    # TODO: better way to handle the first call v.s. the rest?
-    return self.forward_jit(tokens, Variable("start_pos", 1, self.max_context).bind(
-      start_pos)) if tokens.shape[0:2] == (1, 1) and start_pos > 0 and jit else self.forward(tokens, start_pos)
-    # op = logits[:, -1, :].argmax(-1).realize()
+  def __call__(self, tokens: Tensor, start_pos: int) -> Tensor:
+    _bsz, seqlen = tokens.shape
+    if start_pos > 0 and seqlen == 1:
+      # start pos > 0 so cache is created, # TODO move cache creation in init and remove this conidtion
+      return self.predicting_one_token(tokens, Variable("start_pos", 1, self.max_context).bind(
+          start_pos))
+    return self.predicting_multiple_tokens(tokens, start_pos, int(seqlen))

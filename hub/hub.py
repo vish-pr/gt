@@ -32,18 +32,29 @@ def download_model(config):
     with Timing("creating cache: "):
       for url in config["urls"]:
         filename = "weights/" + config["name"] + '-' + url.split("/")[-1]
-        weights = convert_from_huggingface(fix_bf16(nn.state.torch_load(str(fetch(url, filename)))), len(
-          model.layers), model.layers[0].attention.n_heads, model.layers[0].attention.n_kv_heads)
+        weights = fix_bf16(convert_from_huggingface(nn.state.torch_load(str(fetch(url, filename))), len(
+          model.layers), model.layers[0].attention.n_heads, model.layers[0].attention.n_kv_heads))
         # TODO: Verify bf16 to float16 conversion is not overflows or underflows, by writing test to diff max and min from this and huggingface
         nn.state.load_state_dict(model, weights, strict=False)
         Device[Device.DEFAULT].synchronize()  # so we can delete th source file
-        # os.remove(filename)  # delete first due to low disk space
+        os.remove(filename)  # delete first due to low disk space
       output_file = "weights/" + config["name"]
       nn.state.safe_save(nn.state.get_state_dict(model), output_file)
   return model
 
 
-def fix_bf16(weights): return {k: v.to(Device.DEFAULT).cast(dtypes.float16) if v.dtype == dtypes.bfloat16 else v for k, v in weights.items()}
+# def fix_bf16(weights): return {k: v.cast(dtypes.float16) if v.dtype == dtypes.bfloat16 else v for k, v in weights.items()}
+def fix_bf16(weights):
+  # convert bf16 to float16 for CUDA
+  def fix(a):
+    a = a.to('CUDA').realize()
+    a = a.bitcast(dtypes.uint16).realize()
+    a = a.cast(dtype=dtypes.uint32).realize()
+    a = a.mul(1 << 16).realize().contiguous().bitcast(dtypes.float32).cast(dtypes.float16)
+    a = a.to(Device.DEFAULT).realize()
+    return a
+  return {k: fix(v) if v.dtype == dtypes.bfloat16 else v for k, v in weights.items()}
+
 
 def convert_from_huggingface(weights: Dict[str, Tensor], n_layers: int, n_heads: int, n_kv_heads: int):
   def permute(v: Tensor, n_heads: int):

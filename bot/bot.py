@@ -2,8 +2,6 @@ import os
 import sys
 import time
 sys.path.append(os.getcwd())   # fmt: off
-
-from tinygrad.helpers import Timing
 from mistral import MistralModels
 import asyncio
 import websockets

@@ -10,8 +10,9 @@ from typing import List, Union
 
 from language_model import LanguageModel
 
-from hub import config_instruct, download_model, download_tokenizer
+from hub.hub import config_instruct, download_model, download_tokenizer
 from tinygrad.device import Device
+
 from tinygrad.tensor import Tensor
 
 

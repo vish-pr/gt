@@ -5,7 +5,6 @@ from typing import Generator, List, Union
 
 from layers import Transformer
 from tinygrad.dtype import dtypes
-from tinygrad.helpers import Timing
 from tinygrad.tensor import Tensor
 
 

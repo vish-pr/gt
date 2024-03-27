@@ -69,4 +69,4 @@ def apply_rotary_emb(xq, xk, freqs_cis) -> Tuple[Tensor, Tensor]:
   c, d = freqs_cis[:, :xq.shape[1], :, :, 0:1], freqs_cis[:, :xq.shape[1], :, :, 1:2]
   xq_out = complex_mult(xq, c, d)
   xk_out = complex_mult(xk, c, d)
-  return xq_out.flatten(3), xk_out.flatten(3)
+  return xq_out.flatten(3).half(), xk_out.flatten(3).half()
